@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.3.0 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.3.2 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -92,7 +92,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.3.0</span>
+  <span class="ver">v1.3.2</span>
 </header>
 <main>
 
@@ -585,138 +585,156 @@ function runVerification(central, billing, internal, agg){
 /* ═══════════════════════════════════════════════════════
    產出 xlsx
 ═══════════════════════════════════════════════════════ */
-/* v1.3.0：用 ExcelJS 產出有樣式的 A4 橫式檢驗總表（夜藍摘要列 + 深灰表頭 + 黃色總計 + 製表人/所長落款） */
+/* v1.3.2：用 ExcelJS 產出有完整樣式的 A4 橫式檢驗總表 */
 async function generateXlsxStyled(month, summary){
   const wb = new ExcelJS.Workbook();
   wb.creator = 'LAB-RECON 檢驗對帳計算器';
   wb.created = new Date();
   const yyy = month.slice(0,3), mm = String(parseInt(month.slice(3))).padStart(2,'0');
+  const FONT = '微軟正黑體';
   const ws = wb.addWorksheet('檢驗總表', {
     pageSetup:{
       paperSize:9, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:1,
       horizontalCentered:true,
       margins:{left:0.4,right:0.4,top:0.5,bottom:0.5,header:0.3,footer:0.3}
     },
-    properties:{ defaultRowHeight:20 },
   });
-  /* 欄寬 */
+
+  /* 欄寬（不用 key，免和 column letter 衝突） */
   ws.columns = [
-    {key:'a',width:12},{key:'b',width:12},{key:'c',width:36},{key:'d',width:9},{key:'e',width:9},
-    {key:'f',width:7},{key:'g',width:9},{key:'h',width:13},{key:'i',width:13},{key:'j',width:13},
+    {width:12},{width:12},{width:38},{width:10},{width:10},
+    {width:8},{width:10},{width:14},{width:14},{width:14},
   ];
 
-  /* === Row 1：機關名 === */
+  const thinBorder = (color='FF90A4AE')=>({style:'thin',color:{argb:color}});
+  const mediumBorder = (color='FF37474F')=>({style:'medium',color:{argb:color}});
+
+  /* === Row 1：機關名（合併 A:J） === */
   ws.mergeCells('A1:J1');
-  const r1 = ws.getCell('A1');
-  r1.value = '臺南市佳里區衛生所';
-  r1.font = {name:'微軟正黑體',size:14,bold:true,color:{argb:'FF1E2A38'}};
-  r1.alignment = {horizontal:'center',vertical:'middle'};
+  ws.getRow(1).height = 24;
+  const c1 = ws.getCell('A1');
+  c1.value = '臺南市佳里區衛生所';
+  c1.font = {name:FONT,size:14,bold:true,color:{argb:'FF1E2A38'}};
+  c1.alignment = {horizontal:'center',vertical:'middle'};
 
-  /* === Row 2：標題 === */
+  /* === Row 2：標題列（夜藍底白字，合併 A:J） === */
   ws.mergeCells('A2:J2');
-  const r2 = ws.getCell('A2');
-  r2.value = `${yyy} 年 ${parseInt(mm)} 月　檢驗總表`;
-  r2.font = {name:'微軟正黑體',size:18,bold:true,color:{argb:'FFFFFFFF'}};
-  r2.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF37474F'}};
-  r2.alignment = {horizontal:'center',vertical:'middle'};
-  ws.getRow(2).height = 30;
+  ws.getRow(2).height = 32;
+  const c2 = ws.getCell('A2');
+  c2.value = `${yyy} 年 ${parseInt(mm)} 月　檢驗總表`;
+  c2.font = {name:FONT,size:18,bold:true,color:{argb:'FFFFFFFF'}};
+  c2.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF37474F'}};
+  c2.alignment = {horizontal:'center',vertical:'middle'};
 
-  /* === Row 3：日期區間 === */
+  /* === Row 3：日期區間（合併 A:J） === */
   ws.mergeCells('A3:J3');
-  const r3 = ws.getCell('A3');
-  r3.value = `${yyy}${mm}01 至 ${yyy}${mm}30`;
-  r3.font = {name:'微軟正黑體',size:11,color:{argb:'FF546E7A'}};
-  r3.alignment = {horizontal:'center',vertical:'middle'};
+  ws.getRow(3).height = 18;
+  const c3 = ws.getCell('A3');
+  c3.value = `${yyy}${mm}01 至 ${yyy}${mm}30`;
+  c3.font = {name:FONT,size:11,italic:true,color:{argb:'FF546E7A'}};
+  c3.alignment = {horizontal:'center',vertical:'middle'};
 
-  /* === Row 4：摘要列（仿 UI summary bar） === */
+  /* === Row 4：摘要列（深灰底白字，合併 A:J） === */
   const sumQty  = summary.reduce((s,i)=>s+i.qty,0);
   const sumDecl = summary.reduce((s,i)=>s+i.decl*i.qty,0);
   const sumCost = summary.reduce((s,i)=>s+i.cost*i.qty,0);
   const sumNet  = sumDecl - sumCost;
   ws.mergeCells('A4:J4');
-  const r4 = ws.getCell('A4');
-  r4.value = `📊  項目數 ${summary.length}　│　總筆數 ${sumQty}　│　申報總額 $${sumDecl.toLocaleString()}　│　成本總額 $${sumCost.toLocaleString()}　│　淨付額 $${sumNet.toLocaleString()}`;
-  r4.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FFFFFFFF'}};
-  r4.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF455A64'}};
-  r4.alignment = {horizontal:'center',vertical:'middle'};
-  ws.getRow(4).height = 22;
+  ws.getRow(4).height = 24;
+  const c4 = ws.getCell('A4');
+  c4.value = `項目數 ${summary.length}　│　總筆數 ${sumQty}　│　申報總額 $${sumDecl.toLocaleString()}　│　成本總額 $${sumCost.toLocaleString()}　│　淨付額 $${sumNet.toLocaleString()}`;
+  c4.font = {name:FONT,size:11,bold:true,color:{argb:'FFFFFFFF'}};
+  c4.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF455A64'}};
+  c4.alignment = {horizontal:'center',vertical:'middle'};
 
-  /* === Row 5：表頭 === */
-  const headers = ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'];
-  ws.getRow(5).values = headers;
-  ws.getRow(5).height = 22;
-  ws.getRow(5).eachCell((cell)=>{
-    cell.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FFFFFFFF'}};
+  /* === Row 5：表頭（深灰底白字 + 邊框） === */
+  const HEADERS = ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'];
+  const headerRow = ws.getRow(5);
+  headerRow.values = HEADERS;
+  headerRow.height = 26;
+  for(let col=1; col<=10; col++){
+    const cell = headerRow.getCell(col);
+    cell.font = {name:FONT,size:11,bold:true,color:{argb:'FFFFFFFF'}};
     cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF37474F'}};
-    cell.alignment = {horizontal:'center',vertical:'middle'};
+    cell.alignment = {horizontal:'center',vertical:'middle',wrapText:true};
     cell.border = {
-      top:{style:'thin',color:{argb:'FF455A64'}},
-      bottom:{style:'thin',color:{argb:'FF455A64'}},
-      left:{style:'thin',color:{argb:'FF455A64'}},
-      right:{style:'thin',color:{argb:'FF455A64'}},
+      top:mediumBorder('FF1E2A38'), bottom:mediumBorder('FF1E2A38'),
+      left:thinBorder('FF455A64'), right:thinBorder('FF455A64'),
     };
-  });
+  }
 
   /* === 資料列 === */
   const firstData = 6;
   let r = firstData;
   for(const it of summary){
-    const row = ws.getRow(r);
     const declTotal = it.decl * it.qty;
     const costTotal = it.cost * it.qty;
     const net       = declTotal - costTotal;
+    const row = ws.getRow(r);
     row.values = [it.code, it.code, it.name, it.decl, it.cost, it.qty, 0, declTotal, costTotal, net];
-    row.height = 18;
-    /* 隔行底色 */
+    row.height = 20;
     const stripe = (r - firstData) % 2 === 1;
-    row.eachCell({includeEmpty:false},(cell,col)=>{
-      cell.font = {name:'微軟正黑體',size:11};
-      cell.alignment = {vertical:'middle', horizontal: (col<=3?'left':'right')};
-      if(col<=2) cell.font = {name:'Consolas',size:11,color:{argb:'FF1565C0'},bold:true};
-      if(col>=4) cell.numFmt = '#,##0';
+    for(let col=1; col<=10; col++){
+      const cell = row.getCell(col);
+      cell.font = (col<=2)
+        ? {name:'Consolas',size:11,color:{argb:'FF1565C0'},bold:true}
+        : {name:FONT,size:11,color:{argb:'FF263238'}};
+      cell.alignment = {
+        horizontal: (col===3 ? 'left' : (col<=2 ? 'center' : 'right')),
+        vertical:'middle',
+      };
+      if(col>=4) cell.numFmt = '#,##0;-#,##0;"-"';
       cell.border = {
-        top:{style:'hair',color:{argb:'FFCFD8DC'}},
-        bottom:{style:'hair',color:{argb:'FFCFD8DC'}},
-        left:{style:'hair',color:{argb:'FFE0E0E0'}},
-        right:{style:'hair',color:{argb:'FFE0E0E0'}},
+        top:thinBorder('FFCFD8DC'), bottom:thinBorder('FFCFD8DC'),
+        left:thinBorder('FFE0E0E0'), right:thinBorder('FFE0E0E0'),
       };
       if(stripe) cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFAFBFC'}};
-    });
+    }
     r++;
   }
 
-  /* === 總計列 === */
+  /* === 總計列（黃底橘邊） === */
   const totalRow = ws.getRow(r);
   totalRow.values = [null,null,'總計：',null,null,sumQty,0,sumDecl,sumCost,sumNet];
-  totalRow.height = 22;
+  totalRow.height = 26;
   ws.mergeCells(`A${r}:E${r}`);
-  totalRow.eachCell({includeEmpty:true},(cell,col)=>{
-    cell.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FF6D4C00'}};
+  for(let col=1; col<=10; col++){
+    const cell = totalRow.getCell(col);
+    cell.font = {name:FONT,size:12,bold:true,color:{argb:'FF6D4C00'}};
     cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF8E1'}};
-    cell.alignment = {vertical:'middle', horizontal:(col<=3?'right':'right')};
-    if(col>=4) cell.numFmt = '#,##0';
+    cell.alignment = {horizontal:'right', vertical:'middle'};
+    if(col>=4) cell.numFmt = '#,##0;-#,##0;"-"';
     cell.border = {
-      top:{style:'medium',color:{argb:'FFFFA000'}},
-      bottom:{style:'medium',color:{argb:'FFFFA000'}},
-      left:{style:'thin',color:{argb:'FFFFB300'}},
-      right:{style:'thin',color:{argb:'FFFFB300'}},
+      top:mediumBorder('FFFF9800'), bottom:mediumBorder('FFFF9800'),
+      left:thinBorder('FFFFB74D'), right:thinBorder('FFFFB74D'),
     };
-  });
+  }
+  const totalRowNo = r;
   r++;
 
-  /* === 落款列 === */
-  r++;  // 空一行
-  const footRow = ws.getRow(r);
-  footRow.values = [null,'製表人：',null,null,null,null,null,'所長：',null,null];
-  footRow.height = 26;
-  footRow.eachCell({includeEmpty:false},(cell)=>{
-    cell.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FF37474F'}};
-    cell.alignment = {vertical:'middle'};
-  });
+  /* === 空一行 === */
+  ws.getRow(r).height = 14;
+  r++;
 
-  /* 凍結窗格 — 表頭固定 */
+  /* === 落款列（製表人 / 所長 含底線） === */
+  const footRow = ws.getRow(r);
+  footRow.height = 32;
+  /* 製表人：B 文字 + C-D 簽名底線 */
+  footRow.getCell(2).value = '製表人：';
+  footRow.getCell(2).font = {name:FONT,size:11,bold:true,color:{argb:'FF37474F'}};
+  footRow.getCell(2).alignment = {horizontal:'right',vertical:'bottom'};
+  ws.mergeCells(`C${r}:D${r}`);
+  footRow.getCell(3).border = { bottom:thinBorder('FF37474F') };
+  /* 所長：H 文字 + I-J 簽名底線 */
+  footRow.getCell(7).value = '所長：';
+  footRow.getCell(7).font = {name:FONT,size:11,bold:true,color:{argb:'FF37474F'}};
+  footRow.getCell(7).alignment = {horizontal:'right',vertical:'bottom'};
+  ws.mergeCells(`H${r}:J${r}`);
+  footRow.getCell(8).border = { bottom:thinBorder('FF37474F') };
+
+  /* 凍結窗格 — 表頭固定（前 5 列） */
   ws.views = [{state:'frozen', ySplit:5}];
-  /* 列印標題 */
+  /* 列印每頁重複表頭 */
   ws.pageSetup.printTitlesRow = '1:5';
 
   return await wb.xlsx.writeBuffer();
@@ -724,15 +742,38 @@ async function generateXlsxStyled(month, summary){
 
 async function downloadXlsx(){
   if(!STATE.summary){ alert('請先上傳 3 份檔案'); return; }
-  const buffer = await generateXlsxStyled(STATE.month, STATE.summary);
-  const blob = new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `檢驗總表-${STATE.month}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  if(typeof ExcelJS === 'undefined'){
+    alert('❌ ExcelJS 未載入（網路問題或被封鎖）— 改用無樣式版下載');
+    /* fallback：用 SheetJS 純文字版（沒樣式但至少有資料） */
+    const wb = XLSX.utils.book_new();
+    const aoa = [
+      [null,'臺南市佳里區衛生所'],
+      [null,`${STATE.month.slice(0,3)} 年 ${parseInt(STATE.month.slice(3))} 月　檢驗總表`],
+      ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'],
+    ];
+    for(const it of STATE.summary){
+      aoa.push([it.code,it.code,it.name,it.decl,it.cost,it.qty,0,it.decl*it.qty,it.cost*it.qty,(it.decl-it.cost)*it.qty]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, '工作表1');
+    XLSX.writeFile(wb, `檢驗總表-${STATE.month}.xlsx`);
+    return;
+  }
+  try {
+    const buffer = await generateXlsxStyled(STATE.month, STATE.summary);
+    const blob = new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `檢驗總表-${STATE.month}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    console.log('[LAB-RECON] ✓ ExcelJS 美化版下載完成', `檢驗總表-${STATE.month}.xlsx`);
+  } catch(e) {
+    console.error('[LAB-RECON] ExcelJS 產製失敗', e);
+    alert('產製失敗：'+e.message);
+  }
 }
 
 /* ═══════════════════════════════════════════════════════
