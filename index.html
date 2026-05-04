@@ -585,36 +585,28 @@ function runVerification(central, billing, internal, agg){
 function generateXlsx(month, summary){
   const wb = XLSX.utils.book_new();
   const yyy = month.slice(0,3), mm = parseInt(month.slice(3));
+  /* v1.2.1：直接寫計算後數值（不寫公式），確保 Excel/Numbers/LibreOffice 開啟立刻看到金額 */
   const aoa = [];
   aoa.push([null,'臺南市佳里區衛生所',null,null,null,null,null,null,null,null]);
   aoa.push([null,'檢驗總表',null,null,null,null,null,null,null,null]);
   aoa.push([null,`${yyy}${String(mm).padStart(2,'0')}01 至 ${yyy}${String(mm).padStart(2,'0')}30`,null,null,null,null,null,null,null,null]);
   aoa.push(['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額']);
-  let firstDataRow = aoa.length + 1;
   for(const it of summary){
-    aoa.push([it.code, it.code, it.name, it.decl, it.cost, it.qty, 0, it.declTotal, it.costTotal, it.net]);
+    const declTotal = it.decl * it.qty;
+    const costTotal = it.cost * it.qty;
+    const net       = declTotal - costTotal;
+    aoa.push([it.code, it.code, it.name, it.decl, it.cost, it.qty, 0, declTotal, costTotal, net]);
   }
-  let lastDataRow = aoa.length;
-  /* 總計列 — 用 Excel 公式 */
-  aoa.push([
-    null, null, '總計：', null, null,
-    {f:`SUM(F${firstDataRow}:F${lastDataRow})`},
-    {f:`SUM(G${firstDataRow}:G${lastDataRow})`},
-    {f:`SUM(H${firstDataRow}:H${lastDataRow})`},
-    {f:`SUM(I${firstDataRow}:I${lastDataRow})`},
-    {f:`SUM(J${firstDataRow}:J${lastDataRow})`},
-  ]);
+  /* 總計列 — 直接 sum 後寫入數值 */
+  const sumQty  = summary.reduce((s,i)=>s+i.qty,0);
+  const sumDecl = summary.reduce((s,i)=>s+i.decl*i.qty,0);
+  const sumCost = summary.reduce((s,i)=>s+i.cost*i.qty,0);
+  const sumNet  = sumDecl - sumCost;
+  aoa.push([null, null, '總計：', null, null, sumQty, 0, sumDecl, sumCost, sumNet]);
   aoa.push([null,null,null,null,null,null,null,null,null,null]);
   aoa.push([null,'製表人：',null,null,'所長',null,null,null,null,null]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  /* H/I/J 也用公式更動態 */
-  for(let i=0;i<summary.length;i++){
-    const r = firstDataRow + i;
-    ws[`H${r}`] = {f:`D${r}*F${r}`, t:'n'};
-    ws[`I${r}`] = {f:`E${r}*F${r}`, t:'n'};
-    ws[`J${r}`] = {f:`H${r}-I${r}`, t:'n'};
-  }
   /* 欄寬 */
   ws['!cols'] = [
     {wch:10},{wch:10},{wch:32},{wch:8},{wch:8},{wch:6},{wch:8},{wch:11},{wch:11},{wch:11}
