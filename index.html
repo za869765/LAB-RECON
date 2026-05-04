@@ -207,14 +207,16 @@ const INTERNAL_CODE_ALIASES = {
 
 /* 已知不在此「中央健保申報明細」對帳表中的內部代碼 */
 const NON_LAB_HINTS = {
-  '85':       '大便潛血 / 腸癌篩檢（同廠商常誠，列在另一份對帳表）',
-  '3F':       '其他項目（同廠商常誠，列在另一份對帳表）',
-  'E4004C':   'IGRA 結核菌篩檢（送胸腔病院處理，非常誠檢驗）',
+  '85':       '潛血 / 腸癌篩檢（同門診廠商，機關自行申報）',
+  '3F':       '幽門 / 胃癌篩檢（同門診廠商，機關自行申報）',
+  'E4004C':   'IGRA 結核菌篩檢（送胸腔病院處理，非門診檢驗）',
 };
 /* 其他項目的「每筆實際成本」覆寫（不在常誠合約價中、用實際給付給該單位的價）
    未列在這裡的代碼預設用內部記錄的「小計」加總 */
 const OTHER_UNIT_COST = {
-  'E4004C': 300,   // 胸腔病院 IGRA 每筆實付 300
+  '85':     80,    // 潛血/腸癌篩檢 每件 80
+  '3F':     185,   // 幽門/胃癌篩檢 每件 185
+  'E4004C': 300,   // IGRA 結核菌篩檢（胸腔病院）每件 300
 };
 
 /* ═══════════════════════════════════════════════════════
@@ -779,6 +781,10 @@ function renderOtherTable(){
   }
   html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;background:#fff8e1;border-radius:4px;font-weight:700;margin-top:4px;">
     <span>合計</span><span style="font-variant-numeric:tabular-nums;">$${fmt(total)}</span>
+  </div>
+  <div style="margin-top:8px;font-size:11px;color:#78909c;line-height:1.6;">
+    📌 上述金額為「檢驗本身」之單位成本（85=80/件、3F=185/件、E4004C=300/件）<br>
+    📌 <b>採便管 / 試管費用依客戶對帳單另計</b>，未含於上方成本
   </div></div>`;
   box.innerHTML = html;
 }
