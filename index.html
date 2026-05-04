@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.1.0 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.2.0 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -91,7 +91,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.1.0</span>
+  <span class="ver">v1.2.0</span>
 </header>
 <main>
 
@@ -142,6 +142,9 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
   <div class="actions">
     <button class="btn btn-success" id="downloadBtn">📥 下載 檢驗總表-YYYMM.xlsx</button>
   </div>
+
+  <h3 style="font-size:13px;font-weight:700;color:#37474f;margin:18px 0 8px">📋 其他對帳表項目（同廠商，不列入上表檢驗總表）</h3>
+  <div id="otherTableBox" style="border:1px solid #cfd8dc;border-radius:6px;padding:12px;background:#fbf6fd;font-size:12px;color:#37474f"></div>
 
   <h3 style="font-size:13px;font-weight:700;color:#37474f;margin:18px 0 8px">🔍 校對結果</h3>
   <div id="verifyResult" class="verify-section"></div>
@@ -201,11 +204,16 @@ const INTERNAL_CODE_ALIASES = {
   // 之後遇到新的短碼可在這裡加：'內部短碼':'央保長碼',
 };
 
-/* 已知不送這家委託實驗室、屬其他單位處理的內部代碼 — 顯示時加說明 */
+/* 已知不在此「中央健保申報明細」對帳表中的內部代碼 */
 const NON_LAB_HINTS = {
-  '85':       '大便潛血 / 腸癌篩檢（送其他實驗室處理）',
-  'E4004C':   '預防保健套餐項目（送其他單位處理）',
-  '3F':       '其他項目（送其他單位處理）',
+  '85':       '大便潛血 / 腸癌篩檢（同廠商常誠，列在另一份對帳表）',
+  '3F':       '其他項目（同廠商常誠，列在另一份對帳表）',
+  'E4004C':   'IGRA 結核菌篩檢（送胸腔病院處理，非常誠檢驗）',
+};
+/* 其他項目的「每筆實際成本」覆寫（不在常誠合約價中、用實際給付給該單位的價）
+   未列在這裡的代碼預設用內部記錄的「小計」加總 */
+const OTHER_UNIT_COST = {
+  'E4004C': 300,   // 胸腔病院 IGRA 每筆實付 300
 };
 
 /* ═══════════════════════════════════════════════════════
@@ -314,10 +322,16 @@ function detectFileType(workbook){
 function parseCentral(ws){
   const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
   const items=[],dailySubs=[];
-  let total={cost:0,decl:0},month=null,curDate=null,inSection=false;
+  let total={cost:0,decl:0},month=null,clinic=null,curDate=null,inSection=false;
   for(const r of rows){
     if(!r||!r.length) continue;
     const a=String(r[0]||'').trim(), e=String(r[4]||'').trim();
+    /* 第一列「客戶簡稱: 臺南市佳里區衛生所」 */
+    if(a.startsWith('客戶簡稱')){
+      const m=a.match(/客戶簡稱:\s*(.+)/);
+      if(m) clinic=m[1].trim();
+      continue;
+    }
     if(a.startsWith('單據日期:')){
       curDate=a.replace('單據日期:','').trim();
       if(!month){
@@ -507,9 +521,9 @@ function runVerification(central, billing, internal, agg){
         /* 廠商多算 — 紅色嚴重 */
         issues.push({level:'error',cat:'廠商多算',msg:`${code}（${name}）：央保=${c} 筆，內部=${i} 筆，廠商多算 ${c-i} 筆 — 請查證`});
       } else if(i > 0 && c === 0){
-        /* 內部有但央保沒收 — 通常是該項目不送這家實驗室（如腸篩 / 預防保健另送），降為 info */
-        const hint = NON_LAB_HINTS[code] ? ` — ${NON_LAB_HINTS[code]}` : ' — 應屬其他實驗室處理';
-        issues.push({level:'info',cat:'非此實驗室',msg:`${code}（${name}）：內部=${i} 筆，央保=0${hint}`});
+        /* 內部有但央保沒收 — 已知代碼不重複報，移到下方「其他項目」獨立區塊；未知代碼才提示 */
+        if(NON_LAB_HINTS[code]) continue;
+        issues.push({level:'info',cat:'其他對帳表',msg:`${code}（${name}）：內部=${i} 筆，本表=0 — 不在此對帳表內，請確認屬其他對帳表或其他單位`});
       } else {
         /* 廠商漏算（內部多） — 黃色警示，對你有利但仍提醒 */
         issues.push({level:'warn',cat:'廠商漏算',msg:`${code}（${name}）：央保=${c} 筆，內部=${i} 筆，廠商少算 ${i-c} 筆（你少付）— 請確認`});
@@ -618,6 +632,46 @@ function fmt(n){
   if(n==null||isNaN(n)) return '-';
   return Math.round(n).toLocaleString('zh-TW');
 }
+
+/* v1.2.0：其他對帳表項目（85/3F 同廠商不同申報、E4004C 不同廠商僅費用） */
+function buildOtherTableSummary(){
+  if(!STATE.internal) return [];
+  const out = [];
+  for(const code of Object.keys(NON_LAB_HINTS)){
+    const items = STATE.internal.items.filter(it => it.code === code);
+    if(!items.length) continue;
+    const count = items.length;
+    let totalCost;
+    if(OTHER_UNIT_COST[code] !== undefined){
+      totalCost = OTHER_UNIT_COST[code] * count;
+    } else {
+      totalCost = items.reduce((s,it)=>s+(+it.amount||0), 0);
+    }
+    out.push({code, count, totalCost, hint: NON_LAB_HINTS[code]});
+  }
+  return out;
+}
+function renderOtherTable(){
+  const box = document.getElementById('otherTableBox');
+  if(!box) return;
+  const items = buildOtherTableSummary();
+  if(!items.length){
+    box.innerHTML = '<span style="color:#90a4ae;font-size:11px;">本月無其他對帳表項目</span>';
+    return;
+  }
+  const total = items.reduce((s,i)=>s+i.totalCost,0);
+  let html = '<div style="display:flex;flex-direction:column;gap:6px">';
+  for(const it of items){
+    html += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px dashed #e1bee7;">
+      <span><b style="font-family:Consolas,monospace;color:#6a1b9a;">${it.code}</b>　<span style="color:#546e7a;font-size:11px;">${it.hint}</span></span>
+      <span style="font-weight:700;color:#6a1b9a;font-variant-numeric:tabular-nums;">$${fmt(it.totalCost)}</span>
+    </div>`;
+  }
+  html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;background:#fff8e1;border-radius:4px;font-weight:700;margin-top:4px;">
+    <span>合計</span><span style="font-variant-numeric:tabular-nums;">$${fmt(total)}</span>
+  </div></div>`;
+  box.innerHTML = html;
+}
 const SLOT_DEFAULTS = {
   central:  {name:'尚未上傳', status:'中央健保申報明細.XLS'},
   billing:  {name:'尚未上傳', status:'客戶對帳單明細.XLS'},
@@ -725,6 +779,9 @@ function renderResult(){
   </tr>`;
   html += `</tbody>`;
   t.innerHTML = html;
+
+  /* 其他對帳表項目（不混入檢驗總表） */
+  renderOtherTable();
 
   /* Verify section */
   const v = runVerification(STATE.central, STATE.billing, STATE.internal, STATE.aggCache);
