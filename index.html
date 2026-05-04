@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>檢驗對帳計算器 v1.0 — 臺南市佳里區衛生所</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Microsoft JhengHei','PingFang TC',-apple-system,sans-serif;background:#eceff1;color:#1e2a38;line-height:1.5;padding:20px;min-height:100vh}
+.wrap{max-width:1200px;margin:0 auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden}
+header{background:linear-gradient(135deg,#37474f,#1e2a38);color:#fff;padding:18px 26px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+header h1{font-size:18px;font-weight:700;letter-spacing:.5px}
+header .ver{font-size:11px;opacity:.7;letter-spacing:1px}
+main{padding:24px}
+section{margin-bottom:24px}
+.sec-hd{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:700;color:#37474f;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #cfd8dc}
+.sec-hd .num{display:inline-flex;width:22px;height:22px;background:#1565c0;color:#fff;border-radius:50%;align-items:center;justify-content:center;font-size:11px}
+.dropzone{border:2px dashed #90a4ae;border-radius:8px;padding:30px;text-align:center;cursor:pointer;background:#f5f7f9;transition:all .2s}
+.dropzone:hover,.dropzone.drag{border-color:#1565c0;background:#e3f2fd}
+.dropzone p{color:#546e7a;font-size:13px;margin-top:8px}
+.dropzone .icon{font-size:36px;color:#90a4ae}
+.dropzone input{display:none}
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:16px}
+.slot{border:1px solid #cfd8dc;border-radius:8px;padding:12px;background:#fafbfc;transition:all .2s;position:relative}
+.slot.done{border-color:#43a047;background:#f1f8e9}
+.slot.error{border-color:#e53935;background:#ffebee}
+.slot .label{font-size:11px;color:#78909c;margin-bottom:4px;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+.slot .name{font-size:12px;color:#37474f;word-break:break-all}
+.slot .status{font-size:11px;margin-top:6px}
+.slot.done .status{color:#2e7d32}
+.slot.error .status{color:#c62828}
+.btn{padding:10px 20px;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:#1565c0;color:#fff}
+.btn-primary:hover{background:#0d47a1}
+.btn-primary:disabled{background:#b0bec5;cursor:not-allowed}
+.btn-success{background:#2e7d32;color:#fff}
+.btn-success:hover{background:#1b5e20}
+.btn-ghost{background:#fff;color:#546e7a;border:1px solid #cfd8dc}
+.btn-ghost:hover{background:#f5f7f9}
+.summary-bar{background:linear-gradient(135deg,#37474f,#455a64);color:#fff;padding:14px 18px;border-radius:8px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;margin-bottom:14px}
+.summary-bar .item{display:flex;flex-direction:column;gap:2px}
+.summary-bar .lbl{font-size:10px;opacity:.7;letter-spacing:1px}
+.summary-bar .val{font-size:18px;font-weight:700}
+.summary-bar .val.green{color:#a5d6a7}
+.summary-bar .val.red{color:#ef9a9a}
+table{width:100%;border-collapse:collapse;background:#fff;font-size:12px}
+table th{background:#37474f;color:#fff;padding:7px 8px;text-align:left;font-weight:600;font-size:11px;letter-spacing:.5px;border:1px solid #455a64}
+table td{padding:5px 8px;border:1px solid #e0e0e0}
+table tr:nth-child(even) td{background:#fafbfc}
+table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px solid #ffa000}
+.num-cell{text-align:right;font-variant-numeric:tabular-nums}
+.code-cell{font-family:'Consolas',monospace;color:#1565c0;font-weight:600}
+.actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.verify-section{margin-top:14px}
+.issue{padding:9px 12px;border-radius:6px;margin-bottom:6px;font-size:12px;display:flex;gap:8px;align-items:flex-start}
+.issue .lvl{font-weight:700;flex-shrink:0;min-width:36px}
+.issue .cat{color:#546e7a;font-size:11px;flex-shrink:0;min-width:120px}
+.issue .msg{flex:1;color:#37474f}
+.issue.error{background:#ffebee;border-left:3px solid #c62828}
+.issue.error .lvl{color:#c62828}
+.issue.warn{background:#fff8e1;border-left:3px solid #ff9800}
+.issue.warn .lvl{color:#e65100}
+.issue.info{background:#e3f2fd;border-left:3px solid #1565c0}
+.issue.info .lvl{color:#1565c0}
+.pass{background:#e8f5e9;border-left:3px solid #2e7d32;padding:9px 12px;border-radius:6px;font-size:12px;color:#2e7d32;font-weight:600}
+.notes{font-size:11px;color:#78909c;margin-top:8px;line-height:1.6}
+.hidden{display:none}
+.tag{display:inline-block;padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600;letter-spacing:.3px}
+.tag.central{background:#e1f5fe;color:#0277bd}
+.tag.billing{background:#fff3e0;color:#ef6c00}
+.tag.internal{background:#f3e5f5;color:#6a1b9a}
+.foot{padding:14px 26px;background:#fafbfc;border-top:1px solid #e0e0e0;font-size:11px;color:#78909c;text-align:center}
+@media(max-width:640px){
+  body{padding:10px}
+  main{padding:16px}
+  .summary-bar{gap:14px}
+  .summary-bar .val{font-size:14px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
+  <span class="ver">v1.0.0</span>
+</header>
+<main>
+
+<section>
+  <div class="sec-hd"><span class="num">1</span>上傳 3 個檔案（自動辨識類型）</div>
+  <label class="dropzone" id="dropzone">
+    <div class="icon">📂</div>
+    <p>點此選擇 / 拖曳檔案進來（一次選 3 個或分次上傳）</p>
+    <p style="font-size:11px;color:#90a4ae;margin-top:4px">
+      <span class="tag central">中央健保申報費和客戶對單</span>
+      <span class="tag billing">客戶帳單明細</span>
+      <span class="tag internal">交付檢驗統計表 (11504.xlsx)</span>
+    </p>
+    <input type="file" id="fileInput" multiple accept=".xls,.xlsx,.XLS,.XLSX">
+  </label>
+  <div class="slots">
+    <div class="slot" id="slot-central">
+      <div class="label"><span class="tag central">央保對單</span></div>
+      <div class="name">尚未上傳</div>
+      <div class="status">→ 來源：中央健保申報費和客戶對單.XLS</div>
+    </div>
+    <div class="slot" id="slot-billing">
+      <div class="label"><span class="tag billing">客戶帳單</span></div>
+      <div class="name">尚未上傳</div>
+      <div class="status">→ 來源：客戶帳單明細.XLS</div>
+    </div>
+    <div class="slot" id="slot-internal">
+      <div class="label"><span class="tag internal">內部統計</span></div>
+      <div class="name">尚未上傳</div>
+      <div class="status">→ 來源：醫療系統 交付檢驗統計表 (11504.xlsx)</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-hd"><span class="num">2</span>產製 + 校對</div>
+  <div class="actions">
+    <button class="btn btn-primary" id="processBtn" disabled>▶ 產製檢驗總表 + 校對廠商</button>
+    <button class="btn btn-ghost" id="resetBtn">↺ 重新上傳</button>
+  </div>
+  <div class="notes">
+    需要 3 份檔案（央保、客戶帳單、內部統計）齊全才能產製。<br>
+    校對會跑 6 項檢查 — 每日小計 / 統計總額 / 客戶帳單對帳 / 廠商多算 / 廠商漏算 / 單價一致性。
+  </div>
+</section>
+
+<section id="resultSection" class="hidden">
+  <div class="sec-hd"><span class="num">3</span>結果</div>
+  <div class="summary-bar" id="summaryBar"></div>
+
+  <h3 style="font-size:13px;font-weight:700;color:#37474f;margin-bottom:8px">📊 檢驗總表</h3>
+  <div style="overflow-x:auto;border:1px solid #cfd8dc;border-radius:6px">
+    <table id="resultTable"></table>
+  </div>
+  <div class="actions">
+    <button class="btn btn-success" id="downloadBtn">📥 下載 檢驗總表-YYYMM.xlsx</button>
+  </div>
+
+  <h3 style="font-size:13px;font-weight:700;color:#37474f;margin:18px 0 8px">🔍 校對結果</h3>
+  <div id="verifyResult" class="verify-section"></div>
+</section>
+
+</main>
+<div class="foot">單檔離線 HTML — 資料完全在你的瀏覽器本機處理，不上傳任何檔案到外部</div>
+</div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════
+   常數：項目名稱 → 健保代碼對照
+═══════════════════════════════════════════════════════ */
+const NAME_TO_CODE = {
+  'Triglyceride':'09004C',
+  'Cholesterol-total':'09001C',
+  'HDL-cholesterol':'09043C',
+  'LDL-cholesterol':'09044C',
+  'Creatinine':'09015C',
+  'Glucose AC':'09005C',
+  'HbA1C':'09006C',
+  'Microalbumin':'12111C',
+  'G.P.T.':'09026C',
+  'G.O.T.':'09025C',
+  'PSA':'12081C',
+  'Uric acid':'09013C',
+};
+const CODE_TO_NAME = {
+  '06012C':'Urine routine 尿液常規',
+  '08011C':'血液常規檢查 CBC',
+  '09001C':'Cholesterol 總膽固醇',
+  '09004C':'Triglyceride 中性脂肪',
+  '09005C':'Glucose 血液葡萄糖',
+  '09006C':'HbA1C 糖化血色素',
+  '09013C':'Uric acid 尿酸',
+  '09015C':'Creatinine 血液肌酸酐',
+  '09025C':'GOT(AST) 麩草轉氨脢',
+  '09026C':'GPT(ALT) 麩丙硒轉氨脢',
+  '09043C':'HDL-Cho 高密度脂蛋白',
+  '09044C':'LDL-Cho 低密度脂蛋白',
+  '12081C':'PSA 攝護腺特異抗原',
+  '12111C':'微白蛋白(尿液) M.A.',
+  '21013C':'2025年成人預防保健',
+  'L1001C':'B、C型肝炎篩檢(L1001C)',
+  'L1002C':'B、C型肝炎篩檢(L1002C)',
+};
+
+/* ═══════════════════════════════════════════════════════
+   115 年度臺南市政府衛生局所屬各區衛生所
+   臨床醫事檢驗委託服務案 — 契約標準價格表
+   decl = 健保支付點數，cost = 廠商申報之檢驗項目單價（成本）
+═══════════════════════════════════════════════════════ */
+const STANDARD_PRICES = {
+  '06003C':{decl:15,   cost:11,   name:'尿蛋白 Urine protein'},
+  '06009C':{decl:25,   cost:15,   name:'尿沉渣鏡檢'},
+  '06012C':{decl:75,   cost:33,   name:'尿液常規檢查'},
+  '06013C':{decl:75,   cost:33,   name:'尿液化學法 Urine biochemistry'},
+  '07001C':{decl:20,   cost:19,   name:'Occult blood'},
+  '07009C':{decl:75,   cost:50,   name:'糞便鏡檢查'},
+  '08001C':{decl:20,   cost:16,   name:'RBC'},
+  '08002C':{decl:20,   cost:16,   name:'WBC'},
+  '08003C':{decl:20,   cost:16,   name:'Hemoglobin'},
+  '08004C':{decl:20,   cost:16,   name:'血球比容測定 Hct'},
+  '08005C':{decl:30,   cost:30,   name:'ESR'},
+  '08006C':{decl:40,   cost:33,   name:'Platelet count'},
+  '08011C':{decl:200,  cost:74,   name:'血液常規檢查 CBC'},
+  '08012C':{decl:130,  cost:50,   name:'CBC 7 項'},
+  '08013C':{decl:70,   cost:33,   name:'白血球分 DC'},
+  '08014C':{decl:50,   cost:36,   name:'CBC 3 項'},
+  '08026C':{decl:150,  cost:100,  name:'PT'},
+  '08036C':{decl:180,  cost:150,  name:'APTT'},
+  '08082C':{decl:90,   cost:30,   name:'CBC 5 項'},
+  '09001C':{decl:70,   cost:23,   name:'Cholesterol-total'},
+  '09002C':{decl:40,   cost:14,   name:'B.U.N'},
+  '09004C':{decl:120,  cost:45,   name:'Triglyceride'},
+  '09005C':{decl:50,   cost:16,   name:'Glucose AC'},
+  '09006C':{decl:200,  cost:109,  name:'HbA1C'},
+  '09010C':{decl:280,  cost:110,  name:'T4'},
+  '09011C':{decl:40,   cost:16,   name:'Ca (Calcium)'},
+  '09012C':{decl:40,   cost:16,   name:'P (Phosphorus)'},
+  '09013C':{decl:40,   cost:14,   name:'Uric acid'},
+  '09015C':{decl:40,   cost:14,   name:'Creatinine'},
+  '09016C':{decl:40,   cost:15,   name:'Urine creatinine'},
+  '09020C':{decl:90,   cost:45,   name:'Serum Iron'},
+  '09021C':{decl:40,   cost:16,   name:'Na (Sodium)'},
+  '09022C':{decl:40,   cost:16,   name:'K (Potassium)'},
+  '09025C':{decl:50,   cost:16,   name:'GOT (AST)'},
+  '09026C':{decl:50,   cost:15,   name:'GPT (ALT)'},
+  '09029C':{decl:50,   cost:16,   name:'Bilirubin-total'},
+  '09030C':{decl:40,   cost:14,   name:'Bilirubin-direct'},
+  '09031C':{decl:70,   cost:28,   name:'γ-GT'},
+  '09035C':{decl:270,  cost:100,  name:'TIBC'},
+  '09038C':{decl:40,   cost:14,   name:'Albumin'},
+  '09039C':{decl:40,   cost:14,   name:'白蛋白 Globulin'},
+  '09040C':{decl:40,   cost:20,   name:'Urine protein (random)'},
+  '09043C':{decl:200,  cost:80,   name:'HDL-cholesterol'},
+  '09044C':{decl:250,  cost:96,   name:'LDL-cholesterol'},
+  '09106C':{decl:200,  cost:150,  name:'Free T4'},
+  '09107C':{decl:200,  cost:100,  name:'Free T3'},
+  '09112C':{decl:240,  cost:134,  name:'TSH'},
+  '09117C':{decl:250,  cost:125,  name:'T3'},
+  '09122C':{decl:360,  cost:180,  name:'Intact parathyrin'},
+  '09134C':{decl:80,   cost:70,   name:'糞便潛血免疫分析'},
+  '09140C':{decl:50,   cost:16,   name:'Glucose PC'},
+  '12007C':{decl:200,  cost:107,  name:'AFP'},
+  '12011C':{decl:275,  cost:139,  name:'RA (定量)'},
+  '12021C':{decl:400,  cost:158,  name:'CEA'},
+  '12081C':{decl:400,  cost:189,  name:'PSA'},
+  '12111C':{decl:275,  cost:120,  name:'Microalbumin'},
+  '12116C':{decl:300,  cost:150,  name:'Ferritin'},
+  '12185C':{decl:2229, cost:1500, name:'RNA quantitative amplification test'},
+  '12198C':{decl:400,  cost:200,  name:'Free PSA'},
+  '13007C':{decl:200,  cost:150,  name:'Aerobic Culture'},
+  '14032C':{decl:160,  cost:79,   name:'HBsAg'},
+  '14033C':{decl:200,  cost:90,   name:'Anti-HBs'},
+  '14036C':{decl:250,  cost:125,  name:'HBeAg'},
+  '14039C':{decl:240,  cost:150,  name:'Anti-HAV IgM'},
+  '14040C':{decl:225,  cost:167,  name:'Anti-HAV IgG'},
+  '14047C':{decl:250,  cost:150,  name:'Anti-HCV'},
+  '30522C':{decl:376,  cost:225,  name:'幽門桿菌糞便抗原檢查'},
+  /* 預防保健套餐 */
+  '21013C':{decl:440,  cost:150,  name:'成人預防保健加值'},
+  'L1001C':{decl:370,  cost:278,  name:'成健專屬肝炎 L1001C'},
+  'L1002C':{decl:370,  cost:278,  name:'成健專屬肝炎 L1002C'},
+};
+
+/* ═══════════════════════════════════════════════════════
+   檔案類型偵測
+═══════════════════════════════════════════════════════ */
+function detectFileType(workbook){
+  const ws = workbook.Sheets[workbook.SheetNames[0]];
+  const a1 = String((ws['A1']||{}).v||'');
+  if (a1.includes('中央健保申報')) return 'central';
+  if (a1.includes('客戶帳單明細'))  return 'billing';
+  if (a1 === '筆數' || (ws['A1']&&ws['A1'].v==='筆數')) return 'internal';
+  /* 退路：檢查欄位 */
+  const headers = [];
+  for(let c=1;c<=12;c++){
+    const cell = ws[XLSX.utils.encode_cell({r:0,c:c-1})];
+    if(cell) headers.push(String(cell.v||''));
+  }
+  const hStr = headers.join('|');
+  if (hStr.includes('健保代號')||hStr.includes('檢驗名稱')) return 'internal';
+  if (hStr.includes('檢體編號')||hStr.includes('健保價格')) return 'central';
+  return 'unknown';
+}
+
+/* ═══════════════════════════════════════════════════════
+   解析：央保申報對單
+═══════════════════════════════════════════════════════ */
+function parseCentral(ws){
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
+  const items=[],dailySubs=[];
+  let total={cost:0,decl:0},month=null,curDate=null,inSection=false;
+  for(const r of rows){
+    if(!r||!r.length) continue;
+    const a=String(r[0]||'').trim(), e=String(r[4]||'').trim();
+    if(a.startsWith('單據日期:')){
+      curDate=a.replace('單據日期:','').trim();
+      if(!month){
+        const m=curDate.match(/^(\d+)\/(\d+)\/\d+/);
+        if(m) month=m[1]+m[2].padStart(2,'0');
+      }
+      inSection=false; continue;
+    }
+    if(a==='檢體編號'){ inSection=true; continue; }
+    if(e==='每日小計:'){ dailySubs.push({date:curDate,cost:+r[5]||0,decl:+r[6]||0}); inSection=false; continue; }
+    if(e==='客戶統計:'){ total={cost:+r[5]||0,decl:+r[6]||0}; continue; }
+    if(inSection&&a){
+      const sub=String(r[4]||'').trim(), big=String(r[3]||'').trim();
+      let code=null;
+      if(sub==='單價'){
+        const m=big.match(/\(([A-Z]\d{4}[A-Z])\)/);
+        if(m) code=m[1];
+        else if(big==='尿液常規檢查') code='06012C';
+        else if(big==='血液常規檢查') code='08011C';
+        else if(big.includes('成人預防保健')) code='21013C';
+      } else {
+        code = NAME_TO_CODE[sub] || null;
+      }
+      items.push({date:curDate,sn:r[0],name:r[1],id:r[2],big,sub,cost:+r[5]||0,decl:+r[6]||0,code});
+    }
+  }
+  return {items,dailySubs,total,month};
+}
+
+/* ═══════════════════════════════════════════════════════
+   解析：客戶帳單明細
+═══════════════════════════════════════════════════════ */
+function parseBilling(ws){
+  const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
+  let total=0;
+  const visits=[]; let cur=null;
+  for(const r of rows){
+    if(!r||!r.length) continue;
+    const a=String(r[0]||'').trim(), b=String(r[1]||'').trim();
+    /* R2 第二格是金額 */
+    if(a.startsWith('應收金額')){ total = +r[1]||0; continue; }
+    if(/^\d+\/\d+\/\d+/.test(a)){
+      cur={date:a,name:r[1],id:r[2],idLong:r[3],amount:+r[4]||0,itemsText:''};
+      visits.push(cur);
+    } else if(cur && b && !a){
+      cur.itemsText = b;
+    }
+  }
+  return {total,visits};
+}
+
+/* ═══════════════════════════════════════════════════════
+   解析：內部統計表 (11504.xlsx 交付檢驗統計表)
+═══════════════════════════════════════════════════════ */
+function parseInternal(ws){
+  const rows = XLSX.utils.sheet_to_json(ws,{defval:null,raw:false});
+  const items = rows
+    .filter(r=>r['健保代號']&&r['檢驗名稱'])
+    .map(r=>({
+      seq:r['筆數'],mrn:r['病歷號'],name:r['姓名'],
+      code:String(r['健保代號']).trim(),
+      testName:r['檢驗名稱'],
+      visitNo:r['就醫序號'],date:r['就醫日期'],
+      qty:+(r['次數']||1),
+      price:+(r['健保單價']||0),
+      amount:+(r['小計']||0),
+      doctor:r['醫師'],
+    }));
+  return {items};
+}
+
+/* ═══════════════════════════════════════════════════════
+   聚合 + 產製 檢驗總表
+═══════════════════════════════════════════════════════ */
+function aggregateByCode(centralItems){
+  const agg = new Map();
+  for(const it of centralItems){
+    if(!it.code) continue;
+    if(!agg.has(it.code)) agg.set(it.code,{code:it.code,qty:0,costSum:0,declSum:0,prices:new Set(),examples:[]});
+    const a = agg.get(it.code);
+    a.qty++;
+    a.costSum += it.cost;
+    a.declSum += it.decl;
+    a.prices.add(`${it.cost}/${it.decl}`);
+    a.examples.push(it);
+  }
+  return agg;
+}
+function buildSummary(agg){
+  const items=[];
+  const codes=[...agg.keys()].sort((a,b)=>{
+    const aN=/^\d/.test(a), bN=/^\d/.test(b);
+    if(aN!==bN) return aN?-1:1;
+    return a.localeCompare(b);
+  });
+  for(const code of codes){
+    const a = agg.get(code);
+    const decl = a.qty>0 ? Math.round(a.declSum/a.qty) : 0;
+    const cost = a.qty>0 ? Math.round(a.costSum/a.qty) : 0;
+    items.push({
+      code, name: CODE_TO_NAME[code] || code,
+      decl, cost, qty: a.qty,
+      declTotal: a.declSum, costTotal: a.costSum,
+      net: a.declSum - a.costSum,
+    });
+  }
+  return items;
+}
+
+/* ═══════════════════════════════════════════════════════
+   校對：6 項檢查
+═══════════════════════════════════════════════════════ */
+function runVerification(central, billing, internal, agg){
+  const issues = [];
+  const passes = [];
+
+  /* 1. 央保 客戶統計 = 每日小計 加總 */
+  const dCost = central.dailySubs.reduce((s,d)=>s+d.cost,0);
+  const dDecl = central.dailySubs.reduce((s,d)=>s+d.decl,0);
+  const okC = Math.abs(dCost - central.total.cost)<.5;
+  const okD = Math.abs(dDecl - central.total.decl)<.5;
+  if(okC && okD) passes.push(`央保 客戶統計 = 每日小計加總 ✓ (標準=${central.total.cost} 健保=${central.total.decl})`);
+  if(!okC) issues.push({level:'error',cat:'央保自身對帳',msg:`客戶統計標準價=${central.total.cost} 但每日小計加總=${dCost}（差 ${central.total.cost-dCost}）`});
+  if(!okD) issues.push({level:'error',cat:'央保自身對帳',msg:`客戶統計健保價=${central.total.decl} 但每日小計加總=${dDecl}（差 ${central.total.decl-dDecl}）`});
+
+  /* 2. 央保 每日小計 = 該日逐筆加總 */
+  const byDate = new Map();
+  for(const it of central.items){
+    if(!byDate.has(it.date)) byDate.set(it.date,{cost:0,decl:0,n:0});
+    const d=byDate.get(it.date);
+    d.cost+=it.cost; d.decl+=it.decl; d.n++;
+  }
+  let dailyOk = true;
+  for(const sub of central.dailySubs){
+    const d = byDate.get(sub.date) || {cost:0,decl:0};
+    if(Math.abs(d.cost-sub.cost)>.5){
+      issues.push({level:'error',cat:'央保每日小計',msg:`${sub.date} 標準價小計=${sub.cost} 但逐筆加總=${d.cost}（差 ${sub.cost-d.cost}）`});
+      dailyOk=false;
+    }
+    if(Math.abs(d.decl-sub.decl)>.5){
+      issues.push({level:'error',cat:'央保每日小計',msg:`${sub.date} 健保價小計=${sub.decl} 但逐筆加總=${d.decl}（差 ${sub.decl-d.decl}）`});
+      dailyOk=false;
+    }
+  }
+  if(dailyOk) passes.push(`央保 每日小計 = 該日逐筆加總 ✓ (${central.dailySubs.length} 個工作日)`);
+
+  /* 3. 客戶帳單應收金額 = 央保客戶統計（標準價） */
+  if(billing){
+    if(Math.abs(billing.total - central.total.cost)<.5){
+      passes.push(`客戶帳單應收金額 = 央保客戶統計標準價 ✓ ($${billing.total})`);
+    } else {
+      issues.push({level:'error',cat:'帳單 vs 央保',msg:`客戶帳單應收金額=${billing.total} 但央保客戶統計（標準價）=${central.total.cost}（差 ${billing.total-central.total.cost}）`});
+    }
+    /* 4. 客戶帳單 visits 加總 */
+    const visitSum = billing.visits.reduce((s,v)=>s+v.amount,0);
+    if(Math.abs(visitSum - billing.total)<.5){
+      passes.push(`客戶帳單 各筆加總 = 應收金額 ✓ (${billing.visits.length} 筆訪客)`);
+    } else {
+      issues.push({level:'warn',cat:'客戶帳單',msg:`各筆加總=${visitSum} ≠ 應收金額=${billing.total}（差 ${billing.total-visitSum}）`});
+    }
+  }
+
+  /* 5. 央保 vs 內部：每代碼數量比對 */
+  if(internal){
+    const intCount = new Map();
+    for(const it of internal.items){
+      intCount.set(it.code, (intCount.get(it.code)||0) + (it.qty||1));
+    }
+    const cenCount = new Map();
+    for(const it of central.items){
+      if(it.code) cenCount.set(it.code, (cenCount.get(it.code)||0)+1);
+    }
+    const allCodes = new Set([...intCount.keys(), ...cenCount.keys()]);
+    let qtyOk = true;
+    for(const code of allCodes){
+      const c = cenCount.get(code)||0;
+      const i = intCount.get(code)||0;
+      if(c === i) continue;
+      qtyOk=false;
+      const name = CODE_TO_NAME[code] || code;
+      if(c > i){
+        /* 廠商多算 — 紅色嚴重 */
+        issues.push({level:'error',cat:'廠商多算',msg:`${code}（${name}）：央保=${c} 筆，內部=${i} 筆，廠商多算 ${c-i} 筆 — 請查證`});
+      } else if(i > 0 && c === 0){
+        /* 內部有但央保沒收 — 通常是該項目不送這家實驗室（如腸篩 / 預防保健另送），降為 info */
+        issues.push({level:'info',cat:'非此實驗室',msg:`${code}（${name}）：內部=${i} 筆，央保=0 — 應屬其他實驗室處理`});
+      } else {
+        /* 廠商漏算（內部多） — 黃色警示，對你有利但仍提醒 */
+        issues.push({level:'warn',cat:'廠商漏算',msg:`${code}（${name}）：央保=${c} 筆，內部=${i} 筆，廠商少算 ${i-c} 筆（你少付）— 請確認`});
+      }
+    }
+    if(qtyOk) passes.push(`央保 vs 內部 各代碼數量完全一致 ✓`);
+  }
+
+  /* 6. 單價跑掉檢查（同月內不同筆出現不同價格）*/
+  let priceOk = true;
+  for(const [code,a] of agg){
+    if(a.prices.size > 1){
+      issues.push({level:'error',cat:'單價跑掉',msg:`${code}（${CODE_TO_NAME[code]||code}）：央保出現 ${a.prices.size} 種價格 ${[...a.prices].join(' / ')} — 標準/健保價應一致`});
+      priceOk=false;
+    }
+  }
+  if(priceOk) passes.push(`央保各項目單價（同項皆一致）✓`);
+
+  /* 7. 契約標準價格 校對 — 每項 央保價 vs 115 年度合約標準 */
+  let stdOk = true;
+  let stdNotInTable = [];
+  for(const [code,a] of agg){
+    /* 央保的價（每筆都一樣才會走到這） */
+    const sample = a.examples[0];
+    const cCost = sample.cost;     // 廠商申報之檢驗項目單價（成本）
+    const cDecl = sample.decl;     // 健保支付點數
+    const std = STANDARD_PRICES[code];
+    if(!std){
+      stdNotInTable.push(code);
+      continue;
+    }
+    const costDiff = cCost - std.cost;
+    const declDiff = cDecl - std.decl;
+    if(costDiff !== 0 || declDiff !== 0){
+      const parts = [];
+      if(declDiff !== 0) parts.push(`健保支付點數 ${cDecl} vs 標準 ${std.decl}（差 ${declDiff>0?'+':''}${declDiff}）`);
+      if(costDiff !== 0) parts.push(`廠商申報單價 ${cCost} vs 標準 ${std.cost}（差 ${costDiff>0?'+':''}${costDiff}）`);
+      const lvl = (costDiff > 0) ? 'error' : 'warn';   /* 廠商收高 = 紅；收低 = 黃 */
+      const tag = (costDiff > 0) ? '廠商超收' : '廠商低收';
+      issues.push({level:lvl,cat:`契約價校對 / ${tag}`,msg:`${code}（${CODE_TO_NAME[code]||std.name}）：${parts.join('；')}`});
+      stdOk = false;
+    }
+  }
+  if(stdNotInTable.length){
+    issues.push({level:'info',cat:'契約價校對',msg:`未列在標準價表的代碼：${stdNotInTable.join('、')} — 無契約標準可比對`});
+  }
+  if(stdOk && stdNotInTable.length===0){
+    passes.push(`所有項目價格皆符合 115 年度契約標準 ✓`);
+  } else if(stdOk){
+    passes.push(`契約標準表內項目價格皆符合 ✓（${stdNotInTable.length} 項無標準可比）`);
+  }
+
+  return {issues, passes};
+}
+
+/* ═══════════════════════════════════════════════════════
+   產出 xlsx
+═══════════════════════════════════════════════════════ */
+function generateXlsx(month, summary){
+  const wb = XLSX.utils.book_new();
+  const yyy = month.slice(0,3), mm = parseInt(month.slice(3));
+  const aoa = [];
+  aoa.push([null,'臺南市佳里區衛生所',null,null,null,null,null,null,null,null]);
+  aoa.push([null,'檢驗總表',null,null,null,null,null,null,null,null]);
+  aoa.push([null,`${yyy}${String(mm).padStart(2,'0')}01 至 ${yyy}${String(mm).padStart(2,'0')}30`,null,null,null,null,null,null,null,null]);
+  aoa.push(['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額']);
+  let firstDataRow = aoa.length + 1;
+  for(const it of summary){
+    aoa.push([it.code, it.code, it.name, it.decl, it.cost, it.qty, 0, it.declTotal, it.costTotal, it.net]);
+  }
+  let lastDataRow = aoa.length;
+  /* 總計列 — 用 Excel 公式 */
+  aoa.push([
+    null, null, '總計：', null, null,
+    {f:`SUM(F${firstDataRow}:F${lastDataRow})`},
+    {f:`SUM(G${firstDataRow}:G${lastDataRow})`},
+    {f:`SUM(H${firstDataRow}:H${lastDataRow})`},
+    {f:`SUM(I${firstDataRow}:I${lastDataRow})`},
+    {f:`SUM(J${firstDataRow}:J${lastDataRow})`},
+  ]);
+  aoa.push([null,null,null,null,null,null,null,null,null,null]);
+  aoa.push([null,'製表人：',null,null,'所長',null,null,null,null,null]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  /* H/I/J 也用公式更動態 */
+  for(let i=0;i<summary.length;i++){
+    const r = firstDataRow + i;
+    ws[`H${r}`] = {f:`D${r}*F${r}`, t:'n'};
+    ws[`I${r}`] = {f:`E${r}*F${r}`, t:'n'};
+    ws[`J${r}`] = {f:`H${r}-I${r}`, t:'n'};
+  }
+  /* 欄寬 */
+  ws['!cols'] = [
+    {wch:10},{wch:10},{wch:32},{wch:8},{wch:8},{wch:6},{wch:8},{wch:11},{wch:11},{wch:11}
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, '工作表1');
+  return wb;
+}
+
+/* ═══════════════════════════════════════════════════════
+   UI 操控
+═══════════════════════════════════════════════════════ */
+const STATE = { central:null, billing:null, internal:null, summary:null, month:null };
+
+function fmt(n){
+  if(n==null||isNaN(n)) return '-';
+  return Math.round(n).toLocaleString('zh-TW');
+}
+function setSlot(type, name, status, isErr){
+  const el = document.getElementById('slot-'+type);
+  if(!el) return;
+  el.classList.remove('done','error');
+  el.classList.add(isErr?'error':'done');
+  el.querySelector('.name').textContent = name;
+  el.querySelector('.status').textContent = status;
+}
+function resetSlot(type, defaultName, defaultStatus){
+  const el = document.getElementById('slot-'+type);
+  if(!el) return;
+  el.classList.remove('done','error');
+  el.querySelector('.name').textContent = defaultName;
+  el.querySelector('.status').textContent = defaultStatus;
+}
+function checkReady(){
+  const ready = STATE.central && STATE.billing && STATE.internal;
+  document.getElementById('processBtn').disabled = !ready;
+}
+
+async function readWorkbook(file){
+  const buf = await file.arrayBuffer();
+  return XLSX.read(buf, {type:'array', cellDates:false});
+}
+async function handleFiles(files){
+  for(const file of files){
+    try {
+      const wb = await readWorkbook(file);
+      const type = detectFileType(wb);
+      if(type==='central'){
+        STATE.central = parseCentral(wb.Sheets[wb.SheetNames[0]]);
+        if(STATE.central.month) STATE.month = STATE.central.month;
+        setSlot('central', file.name, `✓ ${STATE.central.items.length} 筆檢驗、${STATE.central.dailySubs.length} 個工作日`);
+      } else if(type==='billing'){
+        STATE.billing = parseBilling(wb.Sheets[wb.SheetNames[0]]);
+        setSlot('billing', file.name, `✓ ${STATE.billing.visits.length} 筆訪視、應收 $${fmt(STATE.billing.total)}`);
+      } else if(type==='internal'){
+        STATE.internal = parseInternal(wb.Sheets[wb.SheetNames[0]]);
+        setSlot('internal', file.name, `✓ ${STATE.internal.items.length} 筆檢驗紀錄`);
+      } else {
+        alert(`無法辨識檔案類型：${file.name}\n請確認是央保、客戶帳單、或交付檢驗統計表`);
+      }
+    } catch(e){
+      alert(`讀取失敗：${file.name}\n${e.message}`);
+    }
+  }
+  checkReady();
+}
+
+function renderResult(){
+  const sec = document.getElementById('resultSection');
+  sec.classList.remove('hidden');
+
+  /* Summary bar */
+  const sH = STATE.summary.reduce((s,i)=>s+i.declTotal,0);
+  const sI = STATE.summary.reduce((s,i)=>s+i.costTotal,0);
+  const sJ = sH - sI;
+  const sQ = STATE.summary.reduce((s,i)=>s+i.qty,0);
+  const sb = document.getElementById('summaryBar');
+  sb.innerHTML = `
+    <div class="item"><span class="lbl">月份</span><span class="val">${STATE.month? `${STATE.month.slice(0,3)} 年 ${parseInt(STATE.month.slice(3))} 月` : '-'}</span></div>
+    <div class="item"><span class="lbl">項目數</span><span class="val">${STATE.summary.length}</span></div>
+    <div class="item"><span class="lbl">總筆數</span><span class="val">${sQ}</span></div>
+    <div class="item"><span class="lbl">申報總額</span><span class="val green">$${fmt(sH)}</span></div>
+    <div class="item"><span class="lbl">成本總額</span><span class="val red">$${fmt(sI)}</span></div>
+    <div class="item"><span class="lbl">淨付額</span><span class="val green">$${fmt(sJ)}</span></div>
+  `;
+
+  /* Result table */
+  const t = document.getElementById('resultTable');
+  let html = `<thead><tr>
+    <th>檢驗代碼</th><th>申報代碼</th><th>檢驗名稱</th>
+    <th class="num-cell">申報額</th><th class="num-cell">單價</th>
+    <th class="num-cell">數量</th><th class="num-cell">自費額</th>
+    <th class="num-cell">申報總額</th><th class="num-cell">成本總額</th><th class="num-cell">淨付額</th>
+  </tr></thead><tbody>`;
+  for(const it of STATE.summary){
+    html += `<tr>
+      <td class="code-cell">${it.code}</td><td class="code-cell">${it.code}</td><td>${it.name}</td>
+      <td class="num-cell">${fmt(it.decl)}</td><td class="num-cell">${fmt(it.cost)}</td>
+      <td class="num-cell">${fmt(it.qty)}</td><td class="num-cell">0</td>
+      <td class="num-cell">${fmt(it.declTotal)}</td><td class="num-cell">${fmt(it.costTotal)}</td><td class="num-cell">${fmt(it.net)}</td>
+    </tr>`;
+  }
+  html += `<tr class="total"><td colspan="5" style="text-align:right">總計：</td>
+    <td class="num-cell">${fmt(sQ)}</td><td class="num-cell">0</td>
+    <td class="num-cell">${fmt(sH)}</td><td class="num-cell">${fmt(sI)}</td><td class="num-cell">${fmt(sJ)}</td>
+  </tr>`;
+  html += `</tbody>`;
+  t.innerHTML = html;
+
+  /* Verify section */
+  const v = runVerification(STATE.central, STATE.billing, STATE.internal, STATE.aggCache);
+  const vEl = document.getElementById('verifyResult');
+  let vHtml = '';
+  /* 通過項目 */
+  for(const p of v.passes){
+    vHtml += `<div class="pass">🟢 ${p}</div>`;
+  }
+  /* 嚴重 */
+  const errs = v.issues.filter(i=>i.level==='error');
+  const warns = v.issues.filter(i=>i.level==='warn');
+  const infos = v.issues.filter(i=>i.level==='info');
+  for(const it of errs){
+    vHtml += `<div class="issue error"><span class="lvl">🔴 嚴重</span><span class="cat">${it.cat}</span><span class="msg">${it.msg}</span></div>`;
+  }
+  for(const it of warns){
+    vHtml += `<div class="issue warn"><span class="lvl">🟡 警示</span><span class="cat">${it.cat}</span><span class="msg">${it.msg}</span></div>`;
+  }
+  for(const it of infos){
+    vHtml += `<div class="issue info"><span class="lvl">🔵 資訊</span><span class="cat">${it.cat}</span><span class="msg">${it.msg}</span></div>`;
+  }
+  if(!v.issues.length && !v.passes.length){
+    vHtml = `<div class="pass">無檢查資料</div>`;
+  }
+  vEl.innerHTML = vHtml;
+
+  /* Download button label */
+  document.getElementById('downloadBtn').textContent = `📥 下載 檢驗總表-${STATE.month||'YYYMM'}.xlsx`;
+  sec.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function processData(){
+  if(!STATE.central){ alert('缺少 央保申報對單'); return; }
+  STATE.aggCache = aggregateByCode(STATE.central.items);
+  STATE.summary = buildSummary(STATE.aggCache);
+  if(!STATE.month) STATE.month = '11500';
+  renderResult();
+}
+function downloadXlsx(){
+  if(!STATE.summary){ alert('請先產製'); return; }
+  const wb = generateXlsx(STATE.month, STATE.summary);
+  XLSX.writeFile(wb, `檢驗總表-${STATE.month}.xlsx`);
+}
+
+/* Reset */
+function resetAll(){
+  STATE.central = STATE.billing = STATE.internal = STATE.summary = STATE.month = STATE.aggCache = null;
+  resetSlot('central','尚未上傳','→ 來源：中央健保申報費和客戶對單.XLS');
+  resetSlot('billing','尚未上傳','→ 來源：客戶帳單明細.XLS');
+  resetSlot('internal','尚未上傳','→ 來源：醫療系統 交付檢驗統計表 (11504.xlsx)');
+  document.getElementById('processBtn').disabled = true;
+  document.getElementById('resultSection').classList.add('hidden');
+  document.getElementById('fileInput').value = '';
+}
+
+/* Wire up events */
+document.addEventListener('DOMContentLoaded', () => {
+  const dz = document.getElementById('dropzone');
+  const fi = document.getElementById('fileInput');
+  fi.addEventListener('change', e => handleFiles(e.target.files));
+  ['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    dz.classList.add('drag');
+  }));
+  ['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); e.stopPropagation();
+    dz.classList.remove('drag');
+  }));
+  dz.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+
+  document.getElementById('processBtn').addEventListener('click', processData);
+  document.getElementById('downloadBtn').addEventListener('click', downloadXlsx);
+  document.getElementById('resetBtn').addEventListener('click', resetAll);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+# 來源測試檔（含病患資料，不入版控）
+*.xls
+*.XLS
+*.xlsx
+*.XLSX
+sample/
+test_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
