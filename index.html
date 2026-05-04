@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.2.0 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.3.0 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Microsoft JhengHei','PingFang TC',-apple-system,sans-serif;background:#eceff1;color:#1e2a38;line-height:1.5;padding:20px;min-height:100vh}
@@ -91,7 +92,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.2.0</span>
+  <span class="ver">v1.3.0</span>
 </header>
 <main>
 
@@ -481,7 +482,7 @@ function runVerification(central, billing, internal, agg){
       dailyOk=false;
     }
   }
-  if(dailyOk) passes.push(`央保 每日小計 = 該日逐筆加總 ✓ (${central.dailySubs.length} 個工作日)`);
+  if(dailyOk) passes.push(`央保 每日小計 = 該日逐筆加總 ✓`);
 
   /* 3. 客戶帳單應收金額 = 央保客戶統計（標準價） */
   if(billing){
@@ -582,37 +583,154 @@ function runVerification(central, billing, internal, agg){
 /* ═══════════════════════════════════════════════════════
    產出 xlsx
 ═══════════════════════════════════════════════════════ */
-function generateXlsx(month, summary){
-  const wb = XLSX.utils.book_new();
-  const yyy = month.slice(0,3), mm = parseInt(month.slice(3));
-  /* v1.2.1：直接寫計算後數值（不寫公式），確保 Excel/Numbers/LibreOffice 開啟立刻看到金額 */
-  const aoa = [];
-  aoa.push([null,'臺南市佳里區衛生所',null,null,null,null,null,null,null,null]);
-  aoa.push([null,'檢驗總表',null,null,null,null,null,null,null,null]);
-  aoa.push([null,`${yyy}${String(mm).padStart(2,'0')}01 至 ${yyy}${String(mm).padStart(2,'0')}30`,null,null,null,null,null,null,null,null]);
-  aoa.push(['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額']);
-  for(const it of summary){
-    const declTotal = it.decl * it.qty;
-    const costTotal = it.cost * it.qty;
-    const net       = declTotal - costTotal;
-    aoa.push([it.code, it.code, it.name, it.decl, it.cost, it.qty, 0, declTotal, costTotal, net]);
-  }
-  /* 總計列 — 直接 sum 後寫入數值 */
+/* v1.3.0：用 ExcelJS 產出有樣式的 A4 橫式檢驗總表（夜藍摘要列 + 深灰表頭 + 黃色總計 + 製表人/所長落款） */
+async function generateXlsxStyled(month, summary){
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'LAB-RECON 檢驗對帳計算器';
+  wb.created = new Date();
+  const yyy = month.slice(0,3), mm = String(parseInt(month.slice(3))).padStart(2,'0');
+  const ws = wb.addWorksheet('檢驗總表', {
+    pageSetup:{
+      paperSize:9, orientation:'landscape', fitToPage:true, fitToWidth:1, fitToHeight:1,
+      horizontalCentered:true,
+      margins:{left:0.4,right:0.4,top:0.5,bottom:0.5,header:0.3,footer:0.3}
+    },
+    properties:{ defaultRowHeight:20 },
+  });
+  /* 欄寬 */
+  ws.columns = [
+    {key:'a',width:12},{key:'b',width:12},{key:'c',width:36},{key:'d',width:9},{key:'e',width:9},
+    {key:'f',width:7},{key:'g',width:9},{key:'h',width:13},{key:'i',width:13},{key:'j',width:13},
+  ];
+
+  /* === Row 1：機關名 === */
+  ws.mergeCells('A1:J1');
+  const r1 = ws.getCell('A1');
+  r1.value = '臺南市佳里區衛生所';
+  r1.font = {name:'微軟正黑體',size:14,bold:true,color:{argb:'FF1E2A38'}};
+  r1.alignment = {horizontal:'center',vertical:'middle'};
+
+  /* === Row 2：標題 === */
+  ws.mergeCells('A2:J2');
+  const r2 = ws.getCell('A2');
+  r2.value = `${yyy} 年 ${parseInt(mm)} 月　檢驗總表`;
+  r2.font = {name:'微軟正黑體',size:18,bold:true,color:{argb:'FFFFFFFF'}};
+  r2.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF37474F'}};
+  r2.alignment = {horizontal:'center',vertical:'middle'};
+  ws.getRow(2).height = 30;
+
+  /* === Row 3：日期區間 === */
+  ws.mergeCells('A3:J3');
+  const r3 = ws.getCell('A3');
+  r3.value = `${yyy}${mm}01 至 ${yyy}${mm}30`;
+  r3.font = {name:'微軟正黑體',size:11,color:{argb:'FF546E7A'}};
+  r3.alignment = {horizontal:'center',vertical:'middle'};
+
+  /* === Row 4：摘要列（仿 UI summary bar） === */
   const sumQty  = summary.reduce((s,i)=>s+i.qty,0);
   const sumDecl = summary.reduce((s,i)=>s+i.decl*i.qty,0);
   const sumCost = summary.reduce((s,i)=>s+i.cost*i.qty,0);
   const sumNet  = sumDecl - sumCost;
-  aoa.push([null, null, '總計：', null, null, sumQty, 0, sumDecl, sumCost, sumNet]);
-  aoa.push([null,null,null,null,null,null,null,null,null,null]);
-  aoa.push([null,'製表人：',null,null,'所長',null,null,null,null,null]);
+  ws.mergeCells('A4:J4');
+  const r4 = ws.getCell('A4');
+  r4.value = `📊  項目數 ${summary.length}　│　總筆數 ${sumQty}　│　申報總額 $${sumDecl.toLocaleString()}　│　成本總額 $${sumCost.toLocaleString()}　│　淨付額 $${sumNet.toLocaleString()}`;
+  r4.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FFFFFFFF'}};
+  r4.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF455A64'}};
+  r4.alignment = {horizontal:'center',vertical:'middle'};
+  ws.getRow(4).height = 22;
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  /* 欄寬 */
-  ws['!cols'] = [
-    {wch:10},{wch:10},{wch:32},{wch:8},{wch:8},{wch:6},{wch:8},{wch:11},{wch:11},{wch:11}
-  ];
-  XLSX.utils.book_append_sheet(wb, ws, '工作表1');
-  return wb;
+  /* === Row 5：表頭 === */
+  const headers = ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'];
+  ws.getRow(5).values = headers;
+  ws.getRow(5).height = 22;
+  ws.getRow(5).eachCell((cell)=>{
+    cell.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FFFFFFFF'}};
+    cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF37474F'}};
+    cell.alignment = {horizontal:'center',vertical:'middle'};
+    cell.border = {
+      top:{style:'thin',color:{argb:'FF455A64'}},
+      bottom:{style:'thin',color:{argb:'FF455A64'}},
+      left:{style:'thin',color:{argb:'FF455A64'}},
+      right:{style:'thin',color:{argb:'FF455A64'}},
+    };
+  });
+
+  /* === 資料列 === */
+  const firstData = 6;
+  let r = firstData;
+  for(const it of summary){
+    const row = ws.getRow(r);
+    const declTotal = it.decl * it.qty;
+    const costTotal = it.cost * it.qty;
+    const net       = declTotal - costTotal;
+    row.values = [it.code, it.code, it.name, it.decl, it.cost, it.qty, 0, declTotal, costTotal, net];
+    row.height = 18;
+    /* 隔行底色 */
+    const stripe = (r - firstData) % 2 === 1;
+    row.eachCell({includeEmpty:false},(cell,col)=>{
+      cell.font = {name:'微軟正黑體',size:11};
+      cell.alignment = {vertical:'middle', horizontal: (col<=3?'left':'right')};
+      if(col<=2) cell.font = {name:'Consolas',size:11,color:{argb:'FF1565C0'},bold:true};
+      if(col>=4) cell.numFmt = '#,##0';
+      cell.border = {
+        top:{style:'hair',color:{argb:'FFCFD8DC'}},
+        bottom:{style:'hair',color:{argb:'FFCFD8DC'}},
+        left:{style:'hair',color:{argb:'FFE0E0E0'}},
+        right:{style:'hair',color:{argb:'FFE0E0E0'}},
+      };
+      if(stripe) cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFAFBFC'}};
+    });
+    r++;
+  }
+
+  /* === 總計列 === */
+  const totalRow = ws.getRow(r);
+  totalRow.values = [null,null,'總計：',null,null,sumQty,0,sumDecl,sumCost,sumNet];
+  totalRow.height = 22;
+  ws.mergeCells(`A${r}:E${r}`);
+  totalRow.eachCell({includeEmpty:true},(cell,col)=>{
+    cell.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FF6D4C00'}};
+    cell.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FFFFF8E1'}};
+    cell.alignment = {vertical:'middle', horizontal:(col<=3?'right':'right')};
+    if(col>=4) cell.numFmt = '#,##0';
+    cell.border = {
+      top:{style:'medium',color:{argb:'FFFFA000'}},
+      bottom:{style:'medium',color:{argb:'FFFFA000'}},
+      left:{style:'thin',color:{argb:'FFFFB300'}},
+      right:{style:'thin',color:{argb:'FFFFB300'}},
+    };
+  });
+  r++;
+
+  /* === 落款列 === */
+  r++;  // 空一行
+  const footRow = ws.getRow(r);
+  footRow.values = [null,'製表人：',null,null,null,null,null,'所長：',null,null];
+  footRow.height = 26;
+  footRow.eachCell({includeEmpty:false},(cell)=>{
+    cell.font = {name:'微軟正黑體',size:11,bold:true,color:{argb:'FF37474F'}};
+    cell.alignment = {vertical:'middle'};
+  });
+
+  /* 凍結窗格 — 表頭固定 */
+  ws.views = [{state:'frozen', ySplit:5}];
+  /* 列印標題 */
+  ws.pageSetup.printTitlesRow = '1:5';
+
+  return await wb.xlsx.writeBuffer();
+}
+
+async function downloadXlsx(){
+  if(!STATE.summary){ alert('請先上傳 3 份檔案'); return; }
+  const buffer = await generateXlsxStyled(STATE.month, STATE.summary);
+  const blob = new Blob([buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `檢驗總表-${STATE.month}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -813,11 +931,7 @@ function processData(){
   if(!STATE.month) STATE.month = '11500';
   renderResult();
 }
-function downloadXlsx(){
-  if(!STATE.summary){ alert('請先產製'); return; }
-  const wb = generateXlsx(STATE.month, STATE.summary);
-  XLSX.writeFile(wb, `檢驗總表-${STATE.month}.xlsx`);
-}
+/* downloadXlsx 已在 generateXlsxStyled 區塊內定義（v1.3.0 ExcelJS 美化版） */
 
 /* Reset */
 function resetAll(){
