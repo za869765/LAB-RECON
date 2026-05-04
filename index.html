@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.0 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.0.1 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -83,7 +83,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.0.0</span>
+  <span class="ver">v1.0.1</span>
 </header>
 <main>
 
@@ -188,6 +188,23 @@ const CODE_TO_NAME = {
   '21013C':'2025年成人預防保健',
   'L1001C':'B、C型肝炎篩檢(L1001C)',
   'L1002C':'B、C型肝炎篩檢(L1002C)',
+};
+
+/* ═══════════════════════════════════════════════════════
+   內部短碼 → 健保長碼對照
+   醫療系統內部用短碼記錄、央保用 NHI 完整代碼，
+   兩者要對照才能正確比對「央保 vs 內部」數量
+═══════════════════════════════════════════════════════ */
+const INTERNAL_CODE_ALIASES = {
+  '21': '21013C',  // 內部短碼「21」= 成人預防保健加值
+  // 之後遇到新的短碼可在這裡加：'內部短碼':'央保長碼',
+};
+
+/* 已知不送這家委託實驗室、屬其他單位處理的內部代碼 — 顯示時加說明 */
+const NON_LAB_HINTS = {
+  '85':       '大便潛血 / 腸癌篩檢（送其他實驗室處理）',
+  'E4004C':   '預防保健套餐項目（送其他單位處理）',
+  '3F':       '其他項目（送其他單位處理）',
 };
 
 /* ═══════════════════════════════════════════════════════
@@ -358,16 +375,21 @@ function parseInternal(ws){
   const rows = XLSX.utils.sheet_to_json(ws,{defval:null,raw:false});
   const items = rows
     .filter(r=>r['健保代號']&&r['檢驗名稱'])
-    .map(r=>({
-      seq:r['筆數'],mrn:r['病歷號'],name:r['姓名'],
-      code:String(r['健保代號']).trim(),
-      testName:r['檢驗名稱'],
-      visitNo:r['就醫序號'],date:r['就醫日期'],
-      qty:+(r['次數']||1),
-      price:+(r['健保單價']||0),
-      amount:+(r['小計']||0),
-      doctor:r['醫師'],
-    }));
+    .map(r=>{
+      const raw = String(r['健保代號']).trim();
+      /* v1.0.1：短碼自動正規化成央保長碼，避免「21 vs 21013C」誤判 */
+      const code = INTERNAL_CODE_ALIASES[raw] || raw;
+      return {
+        seq:r['筆數'],mrn:r['病歷號'],name:r['姓名'],
+        code, rawCode: raw,
+        testName:r['檢驗名稱'],
+        visitNo:r['就醫序號'],date:r['就醫日期'],
+        qty:+(r['次數']||1),
+        price:+(r['健保單價']||0),
+        amount:+(r['小計']||0),
+        doctor:r['醫師'],
+      };
+    });
   return {items};
 }
 
@@ -485,7 +507,8 @@ function runVerification(central, billing, internal, agg){
         issues.push({level:'error',cat:'廠商多算',msg:`${code}（${name}）：央保=${c} 筆，內部=${i} 筆，廠商多算 ${c-i} 筆 — 請查證`});
       } else if(i > 0 && c === 0){
         /* 內部有但央保沒收 — 通常是該項目不送這家實驗室（如腸篩 / 預防保健另送），降為 info */
-        issues.push({level:'info',cat:'非此實驗室',msg:`${code}（${name}）：內部=${i} 筆，央保=0 — 應屬其他實驗室處理`});
+        const hint = NON_LAB_HINTS[code] ? ` — ${NON_LAB_HINTS[code]}` : ' — 應屬其他實驗室處理';
+        issues.push({level:'info',cat:'非此實驗室',msg:`${code}（${name}）：內部=${i} 筆，央保=0${hint}`});
       } else {
         /* 廠商漏算（內部多） — 黃色警示，對你有利但仍提醒 */
         issues.push({level:'warn',cat:'廠商漏算',msg:`${code}（${name}）：央保=${c} 筆，內部=${i} 筆，廠商少算 ${i-c} 筆（你少付）— 請確認`});
@@ -632,7 +655,8 @@ async function handleFiles(files){
         setSlot('billing', file.name, `✓ ${STATE.billing.visits.length} 筆訪視、應收 $${fmt(STATE.billing.total)}`);
       } else if(type==='internal'){
         STATE.internal = parseInternal(wb.Sheets[wb.SheetNames[0]]);
-        setSlot('internal', file.name, `✓ ${STATE.internal.items.length} 筆檢驗紀錄`);
+        const aliasN = STATE.internal.items.filter(x=>x.code !== x.rawCode).length;
+        setSlot('internal', file.name, `✓ ${STATE.internal.items.length} 筆檢驗紀錄${aliasN?`（其中 ${aliasN} 筆已自動短碼→長碼正規化）`:''}`);
       } else {
         alert(`無法辨識檔案類型：${file.name}\n請確認是央保、客戶帳單、或交付檢驗統計表`);
       }
