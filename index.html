@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.3.2 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.0 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -53,6 +53,13 @@ section{margin-bottom:24px}
 .summary-bar .val{font-size:18px;font-weight:700}
 .summary-bar .val.green{color:#a5d6a7}
 .summary-bar .val.red{color:#ef9a9a}
+.mdbox{border:1px solid #ffe0b2;background:#fffaf3;border-radius:8px;padding:12px 14px;margin-bottom:14px}
+.mdbox .mdhead{font-size:12px;font-weight:700;color:#e65100;margin-bottom:8px}
+.mdchips{display:flex;flex-wrap:wrap;gap:8px}
+.mdchip{padding:6px 13px;border:1px solid #cfd8dc;border-radius:20px;background:#fff;cursor:pointer;font-size:12px;font-variant-numeric:tabular-nums;color:#546e7a;transition:all .12s;font-family:inherit}
+.mdchip:hover{border-color:#ef6c00;background:#fff3e0}
+.mdchip.on{background:#fff3e0;border-color:#ef6c00;color:#e65100;font-weight:700;box-shadow:0 1px 3px rgba(239,108,0,.25)}
+.mdnote{margin-top:9px;font-size:11px;color:#bf360c;background:#fff3e0;border-radius:4px;padding:6px 9px;line-height:1.6}
 table{width:100%;border-collapse:collapse;background:#fff;font-size:12px}
 table th{background:#37474f;color:#fff;padding:7px 8px;text-align:left;font-weight:600;font-size:11px;letter-spacing:.5px;border:1px solid #455a64}
 table td{padding:5px 8px;border:1px solid #e0e0e0}
@@ -92,7 +99,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.3.2</span>
+  <span class="ver">v1.4.0</span>
 </header>
 <main>
 
@@ -135,6 +142,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <section id="resultSection" class="hidden">
   <div class="sec-hd"><span class="num">2</span>結果（即時更新）</div>
   <div class="summary-bar" id="summaryBar"></div>
+  <div class="mdbox hidden" id="mobileDateBox"></div>
 
   <h3 style="font-size:13px;font-weight:700;color:#37474f;margin-bottom:8px">📊 檢驗總表</h3>
   <div style="overflow-x:auto;border:1px solid #cfd8dc;border-radius:6px">
@@ -202,6 +210,7 @@ const CODE_TO_NAME = {
 ═══════════════════════════════════════════════════════ */
 const INTERNAL_CODE_ALIASES = {
   '21': '21013C',  // 內部短碼「21」= 成人預防保健加值
+  '22': '21013C',  // 內部短碼「22」= 成人保健(第一階段)，央保同樣報 21013C
   // 之後遇到新的短碼可在這裡加：'內部短碼':'央保長碼',
 };
 
@@ -779,19 +788,92 @@ async function downloadXlsx(){
 /* ═══════════════════════════════════════════════════════
    UI 操控
 ═══════════════════════════════════════════════════════ */
-const STATE = { central:null, billing:null, internal:null, summary:null, month:null };
+const STATE = { central:null, billing:null, internal:null, summary:null, month:null,
+  mobileDates:new Set(),  // v1.4.0：行動醫院日（杏仁診所，整日排除不計入）
+  filtered:null };        // 套用行動醫院排除後的 central/billing/internal 視圖
 
 function fmt(n){
   if(n==null||isNaN(n)) return '-';
   return Math.round(n).toLocaleString('zh-TW');
 }
 
+/* ═══════════════════════════════════════════════════════
+   v1.4.0：行動醫院日排除
+   標記某日為「行動醫院日」= 該日檢體送杏仁診所（非尚捷/常誠），
+   整日所有筆數從檢驗總表、下載檔、各項校對全部排除，
+   並把央保客戶統計 / 客戶帳單應收的 baseline 同步扣掉該日金額，
+   避免「央保自身對帳」誤判失敗。
+═══════════════════════════════════════════════════════ */
+/* 三檔出現過的所有日期（聯集，已上傳者才算） */
+function getAllWorkDates(){
+  const set = new Set();
+  if(STATE.central){
+    STATE.central.dailySubs.forEach(d=>d.date && set.add(d.date));
+    STATE.central.items.forEach(it=>it.date && set.add(it.date));
+  }
+  if(STATE.internal) STATE.internal.items.forEach(it=>it.date && set.add(it.date));
+  if(STATE.billing)  STATE.billing.visits.forEach(v=>v.date && set.add(v.date));
+  return [...set].sort();   // 115/05/07 為零補位格式，字串排序即正確
+}
+/* 各檔該行動醫院日被排除的筆數（給 UI 提示用） */
+function countExcluded(){
+  const mob = STATE.mobileDates;
+  const c = STATE.central  ? STATE.central.items.filter(it=>mob.has(it.date)).length  : 0;
+  const i = STATE.internal ? STATE.internal.items.filter(it=>mob.has(it.date)).length : 0;
+  const b = STATE.billing  ? STATE.billing.visits.filter(v=>mob.has(v.date)).length   : 0;
+  return {c,i,b};
+}
+/* 套用排除，回傳過濾後（且 baseline 已調整）的 central/billing/internal 視圖 */
+function buildFilteredData(){
+  const mob = STATE.mobileDates;
+  let central = STATE.central, billing = STATE.billing, internal = STATE.internal;
+  if(mob.size && central){
+    const exSubs = central.dailySubs.filter(d=>mob.has(d.date));
+    const exCost = exSubs.reduce((s,d)=>s+d.cost,0);
+    const exDecl = exSubs.reduce((s,d)=>s+d.decl,0);
+    central = {
+      ...central,
+      items: central.items.filter(it=>!mob.has(it.date)),
+      dailySubs: central.dailySubs.filter(d=>!mob.has(d.date)),
+      total: {cost: central.total.cost - exCost, decl: central.total.decl - exDecl},
+    };
+  }
+  if(mob.size && billing){
+    const exAmt = billing.visits.filter(v=>mob.has(v.date)).reduce((s,v)=>s+v.amount,0);
+    billing = {...billing, visits: billing.visits.filter(v=>!mob.has(v.date)), total: billing.total - exAmt};
+  }
+  if(mob.size && internal){
+    internal = {...internal, items: internal.items.filter(it=>!mob.has(it.date))};
+  }
+  return {central, billing, internal};
+}
+/* 渲染行動醫院日選擇器（自動偵測日期鈕） */
+function renderMobileDates(){
+  const box = document.getElementById('mobileDateBox');
+  if(!box) return;
+  const dates = getAllWorkDates();
+  if(!dates.length){ box.classList.add('hidden'); box.innerHTML=''; return; }
+  box.classList.remove('hidden');
+  const chips = dates.map(d=>{
+    const on = STATE.mobileDates.has(d);
+    return `<button type="button" class="mdchip${on?' on':''}" data-date="${d}">${on?'🚐 ':''}${d}</button>`;
+  }).join('');
+  let note = '';
+  if(STATE.mobileDates.size){
+    const {c,i,b} = countExcluded();
+    note = `<div class="mdnote">🚐 已排除行動醫院日 ${[...STATE.mobileDates].sort().join('、')}（杏仁診所，非尚捷/常誠）：央保 ${c} 筆、內部 ${i} 筆、客戶帳單 ${b} 筆 — 不列入檢驗總表與校對</div>`;
+  }
+  box.innerHTML = `<div class="mdhead">🚐 行動醫院日（點日期＝該日送杏仁診所，整日排除不計入）</div>
+    <div class="mdchips">${chips}</div>${note}`;
+}
+
 /* v1.2.0：其他對帳表項目（85/3F 同廠商不同申報、E4004C 不同廠商僅費用） */
 function buildOtherTableSummary(){
-  if(!STATE.internal) return [];
+  const internal = (STATE.filtered && STATE.filtered.internal) || STATE.internal;
+  if(!internal) return [];
   const out = [];
   for(const code of Object.keys(NON_LAB_HINTS)){
-    const items = STATE.internal.items.filter(it => it.code === code);
+    const items = internal.items.filter(it => it.code === code);
     if(!items.length) continue;
     const count = items.length;
     let totalCost;
@@ -899,6 +981,9 @@ function renderResult(){
   const sec = document.getElementById('resultSection');
   sec.classList.remove('hidden');
 
+  /* v1.4.0：行動醫院日選擇器（自動偵測日期鈕） */
+  renderMobileDates();
+
   /* Summary bar */
   const sH = STATE.summary.reduce((s,i)=>s+i.declTotal,0);
   const sI = STATE.summary.reduce((s,i)=>s+i.costTotal,0);
@@ -940,8 +1025,9 @@ function renderResult(){
   /* 其他對帳表項目（不混入檢驗總表） */
   renderOtherTable();
 
-  /* Verify section */
-  const v = runVerification(STATE.central, STATE.billing, STATE.internal, STATE.aggCache);
+  /* Verify section（v1.4.0：用已排除行動醫院日的視圖校對） */
+  const F = STATE.filtered || STATE;
+  const v = runVerification(F.central, F.billing, F.internal, STATE.aggCache);
   const vEl = document.getElementById('verifyResult');
   let vHtml = '';
   /* 通過項目 */
@@ -973,7 +1059,8 @@ function renderResult(){
 
 function processData(){
   if(!STATE.central){ alert('缺少 央保申報對單'); return; }
-  STATE.aggCache = aggregateByCode(STATE.central.items);
+  STATE.filtered = buildFilteredData();   // v1.4.0：套用行動醫院日排除
+  STATE.aggCache = aggregateByCode(STATE.filtered.central.items);
   STATE.summary = buildSummary(STATE.aggCache);
   if(!STATE.month) STATE.month = '11500';
   renderResult();
@@ -982,12 +1069,15 @@ function processData(){
 
 /* Reset */
 function resetAll(){
-  STATE.central = STATE.billing = STATE.internal = STATE.summary = STATE.month = STATE.aggCache = null;
+  STATE.central = STATE.billing = STATE.internal = STATE.summary = STATE.month = STATE.aggCache = STATE.filtered = null;
+  STATE.mobileDates = new Set();
   ['central','billing','internal'].forEach(t => {
     resetSlot(t);
     const inp = document.querySelector(`#slot-${t} input[type="file"]`);
     if(inp) inp.value = '';
   });
+  const mdb = document.getElementById('mobileDateBox');
+  if(mdb){ mdb.classList.add('hidden'); mdb.innerHTML=''; }
   document.getElementById('resultSection').classList.add('hidden');
 }
 
@@ -1016,6 +1106,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('downloadBtn').addEventListener('click', downloadXlsx);
   document.getElementById('resetBtn').addEventListener('click', resetAll);
+
+  /* v1.4.0：行動醫院日 — 點日期鈕切換排除，即時重算（事件委派） */
+  document.getElementById('mobileDateBox').addEventListener('click', e => {
+    const btn = e.target.closest('.mdchip');
+    if(!btn) return;
+    const d = btn.dataset.date;
+    if(STATE.mobileDates.has(d)) STATE.mobileDates.delete(d);
+    else STATE.mobileDates.add(d);
+    processData();
+  });
 });
 </script>
 </body>
