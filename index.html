@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.4 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.5 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.4</span>
+  <span class="ver">v1.4.5</span>
 </header>
 <main>
 
@@ -496,30 +496,45 @@ function buildSummary(agg){
 function computeSelfPay(central, billing){
   const byCode={}; let total=0;
   if(!central || !billing) return {byCode, total};
-  const cenCodesByName={};
-  for(const it of central.items){
-    if(!it.name || !it.code) continue;
-    (cenCodesByName[it.name] = cenCodesByName[it.name] || new Set()).add(it.code);
-  }
   const costOf = c => (STANDARD_PRICES[c] && STANDARD_PRICES[c].cost) || 0;
+  /* 每人：健保成本、健保代碼集合、帳單總額、帳單項目文字 */
+  const cenCost={}, cenCodes={}, billAmt={}, billTxt={};
+  for(const it of central.items){
+    if(!it.name) continue;
+    cenCost[it.name]=(cenCost[it.name]||0)+(+it.cost||0);
+    if(it.code)(cenCodes[it.name]=cenCodes[it.name]||new Set()).add(it.code);
+  }
   for(const v of (billing.visits||[])){
     if(!v.name) continue;
-    const txt = String(v.itemsText||'');
-    const codes = [];
-    for(const nm in NAME_TO_CODE){ if(nm && txt.includes(nm)) codes.push(NAME_TO_CODE[nm]); }
-    if(!codes.length) continue;
-    const cen = cenCodesByName[v.name] || new Set();
-    const selfCodes = codes.filter(c => !cen.has(c));   // 此人此筆不在健保申報的 = 自費
-    if(!selfCodes.length) continue;
-    const coveredCost = codes.filter(c => cen.has(c)).reduce((s,c)=>s+costOf(c), 0);
-    const selfAmt = (+v.amount||0) - coveredCost;
-    if(selfAmt <= 0.5) continue;
-    const w = selfCodes.map(c => costOf(c) || 1);
-    const wsum = w.reduce((s,x)=>s+x,0) || 1;
-    selfCodes.forEach((c,i)=>{ byCode[c] = (byCode[c]||0) + selfAmt*w[i]/wsum; });
-    total += selfAmt;
+    billAmt[v.name]=(billAmt[v.name]||0)+(+v.amount||0);
+    billTxt[v.name]=(billTxt[v.name]||'')+' '+String(v.itemsText||'');
   }
-  for(const c in byCode) byCode[c] = Math.round(byCode[c]);
+  /* 逐人：自費 = 帳單 − 健保（跟「校對」用同一個可靠的金額差），再把這筆差額對到代碼 */
+  for(const name in billAmt){
+    const D = Math.round(billAmt[name] - (cenCost[name]||0));
+    if(D <= 0.5) continue;        // 帳單沒比健保多 → 沒自費
+    total += D;
+    const cen = cenCodes[name] || new Set();
+    /* (1) 先用帳單項目名稱找「不在健保申報」的代碼 */
+    let self = [];
+    for(const nm in NAME_TO_CODE){
+      const c = NAME_TO_CODE[nm];
+      if(nm && billTxt[name].includes(nm) && !cen.has(c) && !self.includes(c)) self.push(c);
+    }
+    /* (2) 名稱對不到 → 用「單價剛好等於差額」的代碼猜（自費通常一支、單價=差額） */
+    if(!self.length){
+      const hit = Object.keys(STANDARD_PRICES).filter(c => !cen.has(c) && costOf(c) === D);
+      if(hit.length === 1) self = [hit[0]];
+    }
+    if(self.length){
+      const w = self.map(c => costOf(c) || 1);
+      const wsum = w.reduce((s,x)=>s+x,0) || 1;
+      self.forEach((c,i)=>{ byCode[c]=(byCode[c]||0)+D*w[i]/wsum; });
+    } else {
+      byCode['（自費）']=(byCode['（自費）']||0)+D;   // 真的對不出代碼，至少入總額
+    }
+  }
+  for(const c in byCode) byCode[c]=Math.round(byCode[c]);
   return {byCode, total: Math.round(total)};
 }
 
