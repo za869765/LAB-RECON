@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.3 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.4 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.3</span>
+  <span class="ver">v1.4.4</span>
 </header>
 <main>
 
@@ -490,6 +490,39 @@ function buildSummary(agg){
   return items;
 }
 
+/* v1.4.4：自費金額歸戶 — 把客戶帳單裡「不在健保申報」的項目(=自費)依檢驗代碼歸位。
+   逐張帳單 visit：用項目名稱對到代碼，扣掉該人健保有 cover 的成本，餘額=自費，
+   分攤到此 visit 不在該人健保申報的代碼上。回 {byCode:{code:金額}, total} */
+function computeSelfPay(central, billing){
+  const byCode={}; let total=0;
+  if(!central || !billing) return {byCode, total};
+  const cenCodesByName={};
+  for(const it of central.items){
+    if(!it.name || !it.code) continue;
+    (cenCodesByName[it.name] = cenCodesByName[it.name] || new Set()).add(it.code);
+  }
+  const costOf = c => (STANDARD_PRICES[c] && STANDARD_PRICES[c].cost) || 0;
+  for(const v of (billing.visits||[])){
+    if(!v.name) continue;
+    const txt = String(v.itemsText||'');
+    const codes = [];
+    for(const nm in NAME_TO_CODE){ if(nm && txt.includes(nm)) codes.push(NAME_TO_CODE[nm]); }
+    if(!codes.length) continue;
+    const cen = cenCodesByName[v.name] || new Set();
+    const selfCodes = codes.filter(c => !cen.has(c));   // 此人此筆不在健保申報的 = 自費
+    if(!selfCodes.length) continue;
+    const coveredCost = codes.filter(c => cen.has(c)).reduce((s,c)=>s+costOf(c), 0);
+    const selfAmt = (+v.amount||0) - coveredCost;
+    if(selfAmt <= 0.5) continue;
+    const w = selfCodes.map(c => costOf(c) || 1);
+    const wsum = w.reduce((s,x)=>s+x,0) || 1;
+    selfCodes.forEach((c,i)=>{ byCode[c] = (byCode[c]||0) + selfAmt*w[i]/wsum; });
+    total += selfAmt;
+  }
+  for(const c in byCode) byCode[c] = Math.round(byCode[c]);
+  return {byCode, total: Math.round(total)};
+}
+
 /* ═══════════════════════════════════════════════════════
    校對：6 項檢查
 ═══════════════════════════════════════════════════════ */
@@ -694,10 +727,12 @@ async function generateXlsxStyled(month, summary){
   const sumDecl = summary.reduce((s,i)=>s+i.decl*i.qty,0);
   const sumCost = summary.reduce((s,i)=>s+i.cost*i.qty,0);
   const sumNet  = sumDecl - sumCost;
+  const SPx = (STATE.selfPay && STATE.selfPay.byCode) || {};      // v1.4.4 自費歸戶
+  const SPxTotal = (STATE.selfPay && STATE.selfPay.total) || 0;
   ws.mergeCells('A4:J4');
   ws.getRow(4).height = 24;
   const c4 = ws.getCell('A4');
-  c4.value = `項目數 ${summary.length}　│　總筆數 ${sumQty}　│　申報總額 $${sumDecl.toLocaleString()}　│　成本總額 $${sumCost.toLocaleString()}　│　淨付額 $${sumNet.toLocaleString()}`;
+  c4.value = `項目數 ${summary.length}　│　總筆數 ${sumQty}　│　申報總額 $${sumDecl.toLocaleString()}　│　成本總額 $${sumCost.toLocaleString()}　│　自費 $${SPxTotal.toLocaleString()}　│　淨付額 $${sumNet.toLocaleString()}`;
   c4.font = {name:FONT,size:11,bold:true,color:{argb:'FFFFFFFF'}};
   c4.fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF455A64'}};
   c4.alignment = {horizontal:'center',vertical:'middle'};
@@ -726,7 +761,7 @@ async function generateXlsxStyled(month, summary){
     const costTotal = it.cost * it.qty;
     const net       = declTotal - costTotal;
     const row = ws.getRow(r);
-    row.values = [it.code, it.code, it.name, it.decl, it.cost, it.qty, 0, declTotal, costTotal, net];
+    row.values = [it.code, it.code, it.name, it.decl, it.cost, it.qty, (SPx[it.code]||0), declTotal, costTotal, net];
     row.height = 20;
     const stripe = (r - firstData) % 2 === 1;
     for(let col=1; col<=10; col++){
@@ -750,7 +785,7 @@ async function generateXlsxStyled(month, summary){
 
   /* === 總計列（黃底橘邊） === */
   const totalRow = ws.getRow(r);
-  totalRow.values = [null,null,'總計：',null,null,sumQty,0,sumDecl,sumCost,sumNet];
+  totalRow.values = [null,null,'總計：',null,null,sumQty,SPxTotal,sumDecl,sumCost,sumNet];
   totalRow.height = 26;
   ws.mergeCells(`A${r}:E${r}`);
   for(let col=1; col<=10; col++){
@@ -807,7 +842,7 @@ async function downloadXlsx(){
       ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'],
     ];
     for(const it of STATE.summary){
-      aoa.push([it.code,it.code,it.name,it.decl,it.cost,it.qty,0,it.decl*it.qty,it.cost*it.qty,(it.decl-it.cost)*it.qty]);
+      aoa.push([it.code,it.code,it.name,it.decl,it.cost,it.qty,((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0),it.decl*it.qty,it.cost*it.qty,(it.decl-it.cost)*it.qty]);
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     XLSX.utils.book_append_sheet(wb, ws, '工作表1');
@@ -1043,11 +1078,15 @@ function renderResult(){
     <div class="item"><span class="lbl">總筆數</span><span class="val">${sQ}</span></div>
     <div class="item"><span class="lbl">申報總額</span><span class="val green">$${fmt(sH)}</span></div>
     <div class="item"><span class="lbl">成本總額</span><span class="val red">$${fmt(sI)}</span></div>
+    <div class="item"><span class="lbl">自費</span><span class="val" style="color:#6a1b9a">$${fmt((STATE.selfPay&&STATE.selfPay.total)||0)}</span></div>
+    <div class="item"><span class="lbl">成本+自費</span><span class="val">$${fmt(sI+((STATE.selfPay&&STATE.selfPay.total)||0))}</span></div>
     <div class="item"><span class="lbl">淨付額</span><span class="val green">$${fmt(sJ)}</span></div>
   `;
 
   /* Result table */
   const t = document.getElementById('resultTable');
+  const SP = (STATE.selfPay && STATE.selfPay.byCode) || {};        // v1.4.4 自費歸戶
+  const SPtotal = (STATE.selfPay && STATE.selfPay.total) || 0;
   let html = `<thead><tr>
     <th>檢驗代碼</th><th>申報代碼</th><th>檢驗名稱</th>
     <th class="num-cell">申報額</th><th class="num-cell">單價</th>
@@ -1058,12 +1097,12 @@ function renderResult(){
     html += `<tr>
       <td class="code-cell">${it.code}</td><td class="code-cell">${it.code}</td><td>${it.name}</td>
       <td class="num-cell">${fmt(it.decl)}</td><td class="num-cell">${fmt(it.cost)}</td>
-      <td class="num-cell">${fmt(it.qty)}</td><td class="num-cell">0</td>
+      <td class="num-cell">${fmt(it.qty)}</td><td class="num-cell"${SP[it.code]?' style="color:#6a1b9a;font-weight:700"':''}>${fmt(SP[it.code]||0)}</td>
       <td class="num-cell">${fmt(it.declTotal)}</td><td class="num-cell">${fmt(it.costTotal)}</td><td class="num-cell">${fmt(it.net)}</td>
     </tr>`;
   }
   html += `<tr class="total"><td colspan="5" style="text-align:right">總計：</td>
-    <td class="num-cell">${fmt(sQ)}</td><td class="num-cell">0</td>
+    <td class="num-cell">${fmt(sQ)}</td><td class="num-cell">${fmt(SPtotal)}</td>
     <td class="num-cell">${fmt(sH)}</td><td class="num-cell">${fmt(sI)}</td><td class="num-cell">${fmt(sJ)}</td>
   </tr>`;
   html += `</tbody>`;
@@ -1117,6 +1156,7 @@ function processData(){
   STATE.filtered = buildFilteredData();   // v1.4.0：套用行動醫院日排除
   STATE.aggCache = aggregateByCode(STATE.filtered.central.items);
   STATE.summary = buildSummary(STATE.aggCache);
+  STATE.selfPay = computeSelfPay(STATE.filtered.central, STATE.filtered.billing);  // v1.4.4 自費歸戶
   if(!STATE.month) STATE.month = '11500';
   renderResult();
 }
