@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.2 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.3 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.2</span>
+  <span class="ver">v1.4.3</span>
 </header>
 <main>
 
@@ -231,6 +231,9 @@ const OTHER_UNIT_COST = {
   '3F':     185,   // 幽門/胃癌篩檢 每件 185
   'E4004C': 300,   // IGRA 結核菌篩檢（胸腔病院）每件 300
 };
+/* v1.4.3：使用者要求「其他對帳表」忽略 IGRA（送胸腔病院、非門診檢驗，不需列參考）。
+   仍保留在 NON_LAB_HINTS 讓校對把它排除、不會跑去「不在這張表」提醒；只是不顯示 */
+const OTHER_TABLE_HIDE = { 'E4004C': 1 };
 
 /* ═══════════════════════════════════════════════════════
    115 年度臺南市政府衛生局所屬各區衛生所
@@ -916,6 +919,7 @@ function buildOtherTableSummary(){
   if(!internal) return [];
   const out = [];
   for(const code of Object.keys(NON_LAB_HINTS)){
+    if(OTHER_TABLE_HIDE[code]) continue;   // v1.4.3：IGRA 等不顯示
     const items = internal.items.filter(it => it.code === code);
     if(!items.length) continue;
     const count = items.length;
@@ -949,7 +953,7 @@ function renderOtherTable(){
     <span>合計</span><span style="font-variant-numeric:tabular-nums;">$${fmt(total)}</span>
   </div>
   <div style="margin-top:8px;font-size:11px;color:#78909c;line-height:1.6;">
-    📌 上述金額為「檢驗本身」之單位成本（85=80/件、3F=185/件、E4004C=300/件）<br>
+    📌 上述金額為「檢驗本身」之單位成本（85=80/件、3F=185/件）<br>
     📌 <b>採便管 / 試管費用依客戶對帳單另計</b>，未含於上方成本
   </div></div>`;
   box.innerHTML = html;
