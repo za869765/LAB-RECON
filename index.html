@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.1 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.2 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -83,6 +83,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 .verdict{padding:12px 14px;border-radius:8px;margin-bottom:10px;font-size:14px;font-weight:700}
 .verdict.ok{background:#e8f5e9;color:#1b5e20;border:1px solid #66bb6a}
 .verdict.bad{background:#ffebee;color:#b71c1c;border:1px solid #ef5350}
+.verdict.note{background:#fff8e1;color:#e65100;border:1px solid #ffb74d}
 .notes{font-size:11px;color:#78909c;margin-top:8px;line-height:1.6}
 .hidden{display:none}
 .tag{display:inline-block;padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600;letter-spacing:.3px}
@@ -102,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.1</span>
+  <span class="ver">v1.4.2</span>
 </header>
 <main>
 
@@ -525,10 +526,25 @@ function runVerification(central, billing, internal, agg){
 
   /* 3. 客戶帳單應收金額 = 央保客戶統計（標準價） */
   if(billing){
-    if(Math.abs(billing.total - central.total.cost)<.5){
+    const billDiff = billing.total - central.total.cost;
+    if(Math.abs(billDiff)<.5){
       passes.push(`客戶帳單金額 = 健保申報金額（都是 $${billing.total}）`);
     } else {
-      issues.push({level:'error',cat:'帳單對健保申報',msg:`客戶帳單收 $${billing.total}，但健保申報金額是 $${central.total.cost}（差 $${billing.total-central.total.cost}）—— 兩邊應該一樣，請查這 $${Math.abs(billing.total-central.total.cost)} 差在哪`});
+      /* v1.4.2：逐人比對找差額來源。帳單比央保多 = 自費候選（自費不進健保申報）；央保多 = 可能漏收要查 */
+      const cenBy={}, billBy={};
+      for(const it of central.items){ if(it.name) cenBy[it.name]=(cenBy[it.name]||0)+(+it.cost||0); }
+      for(const v of billing.visits){ if(v.name) billBy[v.name]=(billBy[v.name]||0)+(+v.amount||0); }
+      const pos=[], neg=[];
+      for(const n of new Set([...Object.keys(cenBy),...Object.keys(billBy)])){
+        const d=(billBy[n]||0)-(cenBy[n]||0);
+        if(d>0.5) pos.push(`${n}（多 $${d}）`);
+        else if(d<-0.5) neg.push(`${n}（少 $${-d}）`);
+      }
+      if(billDiff>0 && neg.length===0){
+        issues.push({level:'warn',cat:'帳單比申報多（多半是自費）',msg:`客戶帳單比健保申報多 $${billDiff} —— 通常是自費項目（自費不進健保申報）。可能是：${pos.join('、')||'—'}。確認是自費就正常，不是才要查。`});
+      } else {
+        issues.push({level:'error',cat:'帳單對健保申報',msg:`客戶帳單 $${billing.total} 對健保申報 $${central.total.cost}（差 $${billDiff>0?'+':''}${billDiff}）。${pos.length?'帳單多（可能自費）：'+pos.join('、')+'。':''}${neg.length?'健保申報多（可能漏收，要查）：'+neg.join('、')+'。':''}`});
+      }
     }
     /* 4. 客戶帳單 visits 加總 */
     const visitSum = billing.visits.reduce((s,v)=>s+v.amount,0);
@@ -1059,15 +1075,16 @@ function renderResult(){
   const errs = v.issues.filter(i=>i.level==='error');
   const warns = v.issues.filter(i=>i.level==='warn');
   const infos = v.issues.filter(i=>i.level==='info');
-  const nBad = errs.length + warns.length;
   let vHtml = '';
-  /* 一句話總結（白話）*/
+  /* 一句話總結（白話）：紅色才是真的要處理；只有黃色代表金額都對、只是提醒 */
   if(!v.issues.length && !v.passes.length){
     vHtml = `<div class="verdict ok">尚無可檢查的資料</div>`;
-  } else if(nBad === 0){
-    vHtml += `<div class="verdict ok">✅ 全部符合 —— 這個月對帳沒問題</div>`;
+  } else if(errs.length > 0){
+    vHtml += `<div class="verdict bad">❌ 有 ${errs.length} 項要處理（紅色）${warns.length?`，另有 ${warns.length} 項提醒`:''}</div>`;
+  } else if(warns.length > 0){
+    vHtml += `<div class="verdict note">⚠️ 金額都對；有 ${warns.length} 項提醒（多半是自費或對你有利），確認一下即可</div>`;
   } else {
-    vHtml += `<div class="verdict bad">❌ 有 ${nBad} 項未符合，請先看下方紅／黃色項目</div>`;
+    vHtml += `<div class="verdict ok">✅ 全部符合 —— 這個月對帳沒問題</div>`;
   }
   /* 未符合擺最前（紅＝要處理；黃＝對你有利但提醒）*/
   for(const it of errs){
