@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.5 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.6 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.5</span>
+  <span class="ver">v1.4.6</span>
 </header>
 <main>
 
@@ -469,7 +469,8 @@ function aggregateByCode(centralItems){
   }
   return agg;
 }
-function buildSummary(agg){
+function buildSummary(agg, selfPay){
+  const SP = (selfPay && selfPay.byCode) || {};   // v1.4.6 淨付額扣自費
   const items=[];
   const codes=[...agg.keys()].sort((a,b)=>{
     const aN=/^\d/.test(a), bN=/^\d/.test(b);
@@ -484,7 +485,7 @@ function buildSummary(agg){
       code, name: CODE_TO_NAME[code] || code,
       decl, cost, qty: a.qty,
       declTotal: a.declSum, costTotal: a.costSum,
-      net: a.declSum - a.costSum,
+      net: a.declSum - a.costSum - (SP[code]||0),
     });
   }
   return items;
@@ -741,9 +742,9 @@ async function generateXlsxStyled(month, summary){
   const sumQty  = summary.reduce((s,i)=>s+i.qty,0);
   const sumDecl = summary.reduce((s,i)=>s+i.decl*i.qty,0);
   const sumCost = summary.reduce((s,i)=>s+i.cost*i.qty,0);
-  const sumNet  = sumDecl - sumCost;
   const SPx = (STATE.selfPay && STATE.selfPay.byCode) || {};      // v1.4.4 自費歸戶
   const SPxTotal = (STATE.selfPay && STATE.selfPay.total) || 0;
+  const sumNet  = sumDecl - sumCost - SPxTotal;                   // v1.4.6 淨付額扣自費
   ws.mergeCells('A4:J4');
   ws.getRow(4).height = 24;
   const c4 = ws.getCell('A4');
@@ -774,7 +775,7 @@ async function generateXlsxStyled(month, summary){
   for(const it of summary){
     const declTotal = it.decl * it.qty;
     const costTotal = it.cost * it.qty;
-    const net       = declTotal - costTotal;
+    const net       = declTotal - costTotal - (SPx[it.code]||0);
     const row = ws.getRow(r);
     row.values = [it.code, it.code, it.name, it.decl, it.cost, it.qty, (SPx[it.code]||0), declTotal, costTotal, net];
     row.height = 20;
@@ -857,7 +858,7 @@ async function downloadXlsx(){
       ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'],
     ];
     for(const it of STATE.summary){
-      aoa.push([it.code,it.code,it.name,it.decl,it.cost,it.qty,((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0),it.decl*it.qty,it.cost*it.qty,(it.decl-it.cost)*it.qty]);
+      aoa.push([it.code,it.code,it.name,it.decl,it.cost,it.qty,((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0),it.decl*it.qty,it.cost*it.qty,(it.decl-it.cost)*it.qty-((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0)]);
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     XLSX.utils.book_append_sheet(wb, ws, '工作表1');
@@ -1084,7 +1085,7 @@ function renderResult(){
   /* Summary bar */
   const sH = STATE.summary.reduce((s,i)=>s+i.declTotal,0);
   const sI = STATE.summary.reduce((s,i)=>s+i.costTotal,0);
-  const sJ = sH - sI;
+  const sJ = sH - sI - ((STATE.selfPay && STATE.selfPay.total) || 0);   /* v1.4.6 淨付額扣自費 */
   const sQ = STATE.summary.reduce((s,i)=>s+i.qty,0);
   const sb = document.getElementById('summaryBar');
   sb.innerHTML = `
@@ -1170,8 +1171,8 @@ function processData(){
   if(!STATE.central){ alert('缺少 央保申報對單'); return; }
   STATE.filtered = buildFilteredData();   // v1.4.0：套用行動醫院日排除
   STATE.aggCache = aggregateByCode(STATE.filtered.central.items);
-  STATE.summary = buildSummary(STATE.aggCache);
   STATE.selfPay = computeSelfPay(STATE.filtered.central, STATE.filtered.billing);  // v1.4.4 自費歸戶
+  STATE.summary = buildSummary(STATE.aggCache, STATE.selfPay);
   if(!STATE.month) STATE.month = '11500';
   renderResult();
 }
