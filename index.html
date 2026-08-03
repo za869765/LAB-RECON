@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.6 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.7 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.6</span>
+  <span class="ver">v1.4.7</span>
 </header>
 <main>
 
@@ -156,9 +156,6 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
     <button class="btn btn-success" id="downloadBtn">📥 下載 檢驗總表-YYYMM.xlsx</button>
   </div>
 
-  <h3 style="font-size:13px;font-weight:700;color:#37474f;margin:18px 0 8px">📋 其他對帳表項目（同廠商，不列入上表檢驗總表）</h3>
-  <div id="otherTableBox" style="border:1px solid #cfd8dc;border-radius:6px;padding:12px;background:#fbf6fd;font-size:12px;color:#37474f"></div>
-
   <h3 style="font-size:13px;font-weight:700;color:#37474f;margin:18px 0 8px">🔍 校對結果</h3>
   <div id="verifyResult" class="verify-section"></div>
 </section>
@@ -185,6 +182,7 @@ const NAME_TO_CODE = {
   'G.P.T.':'09026C',
   'G.O.T.':'09025C',
   'PSA':'12081C',
+  'AFP':'12007C',
   'Uric acid':'09013C',
 };
 const CODE_TO_NAME = {
@@ -200,6 +198,7 @@ const CODE_TO_NAME = {
   '09026C':'GPT(ALT) 麩丙硒轉氨脢',
   '09043C':'HDL-Cho 高密度脂蛋白',
   '09044C':'LDL-Cho 低密度脂蛋白',
+  '12007C':'AFP 甲型胎兒蛋白',
   '12081C':'PSA 攝護腺特異抗原',
   '12111C':'微白蛋白(尿液) M.A.',
   '21013C':'2025年成人預防保健',
@@ -218,22 +217,15 @@ const INTERNAL_CODE_ALIASES = {
   // 之後遇到新的短碼可在這裡加：'內部短碼':'央保長碼',
 };
 
-/* 已知不在此「中央健保申報明細」對帳表中的內部代碼 */
+/* 已知不在此「中央健保申報明細」對帳表中的內部代碼
+   v1.4.7：只用於「校對」把它們排除，不再另外顯示「其他對帳表」區塊 —
+   EN220 記的是「發管數」、廠商對帳表算的是「送管數」，兩者跨月錯位必然不同，
+   拿 EN220 硬數會誤導（實例 11507：EN220 85=17/3F=5，廠商送管數 85=16/3F=4）。 */
 const NON_LAB_HINTS = {
   '85':       '潛血 / 腸癌篩檢（同門診廠商，機關自行申報）',
   '3F':       '幽門 / 胃癌篩檢（同門診廠商，機關自行申報）',
   'E4004C':   'IGRA 結核菌篩檢（送胸腔病院處理，非門診檢驗）',
 };
-/* 其他項目的「每筆實際成本」覆寫（不在常誠合約價中、用實際給付給該單位的價）
-   未列在這裡的代碼預設用內部記錄的「小計」加總 */
-const OTHER_UNIT_COST = {
-  '85':     80,    // 潛血/腸癌篩檢 每件 80
-  '3F':     185,   // 幽門/胃癌篩檢 每件 185
-  'E4004C': 300,   // IGRA 結核菌篩檢（胸腔病院）每件 300
-};
-/* v1.4.3：使用者要求「其他對帳表」忽略 IGRA（送胸腔病院、非門診檢驗，不需列參考）。
-   仍保留在 NON_LAB_HINTS 讓校對把它排除、不會跑去「不在這張表」提醒；只是不顯示 */
-const OTHER_TABLE_HIDE = { 'E4004C': 1 };
 
 /* ═══════════════════════════════════════════════════════
    115 年度臺南市政府衛生局所屬各區衛生所
@@ -707,7 +699,7 @@ async function generateXlsxStyled(month, summary){
   /* 欄寬（不用 key，免和 column letter 衝突） */
   ws.columns = [
     {width:12},{width:12},{width:38},{width:10},{width:10},
-    {width:8},{width:10},{width:14},{width:14},{width:14},
+    {width:8},{width:14},{width:10},{width:14},{width:14},
   ];
 
   const thinBorder = (color='FF90A4AE')=>({style:'thin',color:{argb:color}});
@@ -754,7 +746,7 @@ async function generateXlsxStyled(month, summary){
   c4.alignment = {horizontal:'center',vertical:'middle'};
 
   /* === Row 5：表頭（深灰底白字 + 邊框） === */
-  const HEADERS = ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'];
+  const HEADERS = ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','申報總額','自費額','成本總額','淨付額'];
   const headerRow = ws.getRow(5);
   headerRow.values = HEADERS;
   headerRow.height = 26;
@@ -777,7 +769,7 @@ async function generateXlsxStyled(month, summary){
     const costTotal = it.cost * it.qty;
     const net       = declTotal - costTotal - (SPx[it.code]||0);
     const row = ws.getRow(r);
-    row.values = [it.code, it.code, it.name, it.decl, it.cost, it.qty, (SPx[it.code]||0), declTotal, costTotal, net];
+    row.values = [it.code, it.code, it.name, it.decl, it.cost, it.qty, declTotal, (SPx[it.code]||0), costTotal, net];
     row.height = 20;
     const stripe = (r - firstData) % 2 === 1;
     for(let col=1; col<=10; col++){
@@ -801,7 +793,7 @@ async function generateXlsxStyled(month, summary){
 
   /* === 總計列（黃底橘邊） === */
   const totalRow = ws.getRow(r);
-  totalRow.values = [null,null,'總計：',null,null,sumQty,SPxTotal,sumDecl,sumCost,sumNet];
+  totalRow.values = [null,null,'總計：',null,null,sumQty,sumDecl,SPxTotal,sumCost,sumNet];
   totalRow.height = 26;
   ws.mergeCells(`A${r}:E${r}`);
   for(let col=1; col<=10; col++){
@@ -855,10 +847,10 @@ async function downloadXlsx(){
     const aoa = [
       [null,'臺南市佳里區衛生所'],
       [null,`${STATE.month.slice(0,3)} 年 ${parseInt(STATE.month.slice(3))} 月　檢驗總表`],
-      ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','自費額','申報總額','成本總額','淨付額'],
+      ['檢驗代碼','申報代碼','檢驗名稱','申報額','單價','數量','申報總額','自費額','成本總額','淨付額'],
     ];
     for(const it of STATE.summary){
-      aoa.push([it.code,it.code,it.name,it.decl,it.cost,it.qty,((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0),it.decl*it.qty,it.cost*it.qty,(it.decl-it.cost)*it.qty-((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0)]);
+      aoa.push([it.code,it.code,it.name,it.decl,it.cost,it.qty,it.decl*it.qty,((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0),it.cost*it.qty,(it.decl-it.cost)*it.qty-((STATE.selfPay&&STATE.selfPay.byCode[it.code])||0)]);
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     XLSX.utils.book_append_sheet(wb, ws, '工作表1');
@@ -964,51 +956,6 @@ function renderMobileDates(){
     <div class="mdchips">${chips}</div>${note}`;
 }
 
-/* v1.2.0：其他對帳表項目（85/3F 同廠商不同申報、E4004C 不同廠商僅費用） */
-function buildOtherTableSummary(){
-  const internal = (STATE.filtered && STATE.filtered.internal) || STATE.internal;
-  if(!internal) return [];
-  const out = [];
-  for(const code of Object.keys(NON_LAB_HINTS)){
-    if(OTHER_TABLE_HIDE[code]) continue;   // v1.4.3：IGRA 等不顯示
-    const items = internal.items.filter(it => it.code === code);
-    if(!items.length) continue;
-    const count = items.length;
-    let totalCost;
-    if(OTHER_UNIT_COST[code] !== undefined){
-      totalCost = OTHER_UNIT_COST[code] * count;
-    } else {
-      totalCost = items.reduce((s,it)=>s+(+it.amount||0), 0);
-    }
-    out.push({code, count, totalCost, hint: NON_LAB_HINTS[code]});
-  }
-  return out;
-}
-function renderOtherTable(){
-  const box = document.getElementById('otherTableBox');
-  if(!box) return;
-  const items = buildOtherTableSummary();
-  if(!items.length){
-    box.innerHTML = '<span style="color:#90a4ae;font-size:11px;">本月無其他對帳表項目</span>';
-    return;
-  }
-  const total = items.reduce((s,i)=>s+i.totalCost,0);
-  let html = '<div style="display:flex;flex-direction:column;gap:6px">';
-  for(const it of items){
-    html += `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px dashed #e1bee7;">
-      <span><b style="font-family:Consolas,monospace;color:#6a1b9a;">${it.code}</b>　<span style="color:#546e7a;font-size:11px;">${it.hint}</span></span>
-      <span style="font-weight:700;color:#6a1b9a;font-variant-numeric:tabular-nums;">$${fmt(it.totalCost)}</span>
-    </div>`;
-  }
-  html += `<div style="display:flex;justify-content:space-between;padding:6px 4px;background:#fff8e1;border-radius:4px;font-weight:700;margin-top:4px;">
-    <span>合計</span><span style="font-variant-numeric:tabular-nums;">$${fmt(total)}</span>
-  </div>
-  <div style="margin-top:8px;font-size:11px;color:#78909c;line-height:1.6;">
-    📌 上述金額為「檢驗本身」之單位成本（85=80/件、3F=185/件）<br>
-    📌 <b>採便管 / 試管費用依客戶對帳單另計</b>，未含於上方成本
-  </div></div>`;
-  box.innerHTML = html;
-}
 const SLOT_DEFAULTS = {
   central:  {name:'尚未上傳', status:'中央健保申報明細.XLS'},
   billing:  {name:'尚未上傳', status:'客戶對帳單明細.XLS'},
@@ -1103,29 +1050,29 @@ function renderResult(){
   const t = document.getElementById('resultTable');
   const SP = (STATE.selfPay && STATE.selfPay.byCode) || {};        // v1.4.4 自費歸戶
   const SPtotal = (STATE.selfPay && STATE.selfPay.total) || 0;
+  /* v1.4.7：自費額也是成本，移到「申報總額」與「成本總額」之間 —
+     由左至右讀就是 申報總額 − 自費額 − 成本總額 = 淨付額 */
   let html = `<thead><tr>
     <th>檢驗代碼</th><th>申報代碼</th><th>檢驗名稱</th>
     <th class="num-cell">申報額</th><th class="num-cell">單價</th>
-    <th class="num-cell">數量</th><th class="num-cell">自費額</th>
-    <th class="num-cell">申報總額</th><th class="num-cell">成本總額</th><th class="num-cell">淨付額</th>
+    <th class="num-cell">數量</th><th class="num-cell">申報總額</th>
+    <th class="num-cell">自費額</th><th class="num-cell">成本總額</th><th class="num-cell">淨付額</th>
   </tr></thead><tbody>`;
   for(const it of STATE.summary){
     html += `<tr>
       <td class="code-cell">${it.code}</td><td class="code-cell">${it.code}</td><td>${it.name}</td>
       <td class="num-cell">${fmt(it.decl)}</td><td class="num-cell">${fmt(it.cost)}</td>
-      <td class="num-cell">${fmt(it.qty)}</td><td class="num-cell"${SP[it.code]?' style="color:#6a1b9a;font-weight:700"':''}>${fmt(SP[it.code]||0)}</td>
-      <td class="num-cell">${fmt(it.declTotal)}</td><td class="num-cell">${fmt(it.costTotal)}</td><td class="num-cell">${fmt(it.net)}</td>
+      <td class="num-cell">${fmt(it.qty)}</td><td class="num-cell">${fmt(it.declTotal)}</td>
+      <td class="num-cell"${SP[it.code]?' style="color:#6a1b9a;font-weight:700"':''}>${fmt(SP[it.code]||0)}</td>
+      <td class="num-cell">${fmt(it.costTotal)}</td><td class="num-cell">${fmt(it.net)}</td>
     </tr>`;
   }
   html += `<tr class="total"><td colspan="5" style="text-align:right">總計：</td>
-    <td class="num-cell">${fmt(sQ)}</td><td class="num-cell">${fmt(SPtotal)}</td>
-    <td class="num-cell">${fmt(sH)}</td><td class="num-cell">${fmt(sI)}</td><td class="num-cell">${fmt(sJ)}</td>
+    <td class="num-cell">${fmt(sQ)}</td><td class="num-cell">${fmt(sH)}</td>
+    <td class="num-cell">${fmt(SPtotal)}</td><td class="num-cell">${fmt(sI)}</td><td class="num-cell">${fmt(sJ)}</td>
   </tr>`;
   html += `</tbody>`;
   t.innerHTML = html;
-
-  /* 其他對帳表項目（不混入檢驗總表） */
-  renderOtherTable();
 
   /* Verify section（v1.4.0：用已排除行動醫院日的視圖校對） */
   const F = STATE.filtered || STATE;
