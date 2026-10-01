@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.7 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.8 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.7</span>
+  <span class="ver">v1.4.8</span>
 </header>
 <main>
 
@@ -184,6 +184,12 @@ const NAME_TO_CODE = {
   'PSA':'12081C',
   'AFP':'12007C',
   'Uric acid':'09013C',
+  'T3':'09117C',
+  'TSH':'09112C',
+  'Free T4':'09106C',
+  'Free T3':'09107C',
+  'Bilirubin-total':'09029C',
+  'Bilirubin-direct':'09030C',
 };
 const CODE_TO_NAME = {
   '06012C':'Urine routine 尿液常規',
@@ -196,8 +202,14 @@ const CODE_TO_NAME = {
   '09015C':'Creatinine 血液肌酸酐',
   '09025C':'GOT(AST) 麩草轉氨脢',
   '09026C':'GPT(ALT) 麩丙硒轉氨脢',
+  '09029C':'Bilirubin-total 總膽紅素',
+  '09030C':'Bilirubin-direct 直接膽紅素',
   '09043C':'HDL-Cho 高密度脂蛋白',
   '09044C':'LDL-Cho 低密度脂蛋白',
+  '09106C':'Free T4 游離甲狀腺素',
+  '09107C':'Free T3 游離三碘甲狀腺素',
+  '09112C':'TSH 甲狀腺刺激素',
+  '09117C':'T3 三碘甲狀腺素',
   '12007C':'AFP 甲型胎兒蛋白',
   '12081C':'PSA 攝護腺特異抗原',
   '12111C':'微白蛋白(尿液) M.A.',
@@ -543,9 +555,25 @@ function runVerification(central, billing, internal, agg){
   const dDecl = central.dailySubs.reduce((s,d)=>s+d.decl,0);
   const okC = Math.abs(dCost - central.total.cost)<.5;
   const okD = Math.abs(dDecl - central.total.decl)<.5;
-  if(okC && okD) passes.push(`健保申報表 金額前後一致（總計 $${central.total.cost}）`);
+  if(okC && okD) passes.push(`健保申報表 金額前後一致（成本 $${central.total.cost}、申報 $${central.total.decl}）`);
   if(!okC) issues.push({level:'error',cat:'健保申報表自我檢查',msg:`申報表「客戶統計」是 $${central.total.cost}，但每天小計加起來是 $${dCost}（差 $${central.total.cost-dCost}）—— 申報表本身就兜不攏，可能下載到不完整的檔`});
   if(!okD) issues.push({level:'error',cat:'健保申報表自我檢查',msg:`申報表健保價總計 $${central.total.decl}，但每天小計加起來 $${dDecl}（差 $${central.total.decl-dDecl}）—— 申報表本身兜不攏`});
+
+  /* 1b. v1.4.8：檢驗總表合計 = 申報表客戶統計。對不到代碼的筆數會被 aggregateByCode 跳過，
+     以前沒人檢查 → 總表少列、金額對不上卻顯示「全部符合」（115/9 甲狀腺、膽紅素 5 筆漏掉） */
+  const noCode = central.items.filter(it=>!it.code);
+  const aCost = [...agg.values()].reduce((s,a)=>s+a.costSum,0);
+  const aDecl = [...agg.values()].reduce((s,a)=>s+a.declSum,0);
+  if(noCode.length){
+    const grp = {};
+    for(const it of noCode){ const k=it.sub==='單價'?it.big:it.sub; grp[k]=(grp[k]||0)+1; }
+    issues.push({level:'error',cat:'檢驗總表漏列',msg:`申報表有 ${noCode.length} 筆認不出檢驗代碼，沒算進檢驗總表（成本 $${noCode.reduce((s,it)=>s+it.cost,0)}、申報 $${noCode.reduce((s,it)=>s+it.decl,0)}）：${Object.entries(grp).map(([k,n])=>`${k}×${n}`).join('、')} —— 需補對照表，此時總表金額不可用`});
+  }
+  if(Math.abs(aCost-central.total.cost)<.5 && Math.abs(aDecl-central.total.decl)<.5){
+    passes.push(`檢驗總表合計 = 申報表客戶統計（成本 $${aCost}、申報 $${aDecl}）`);
+  } else if(!noCode.length){
+    issues.push({level:'error',cat:'檢驗總表對申報表',msg:`檢驗總表合計 成本 $${aCost}／申報 $${aDecl}，申報表客戶統計 成本 $${central.total.cost}／申報 $${central.total.decl} —— 對不上`});
+  }
 
   /* 2. 央保 每日小計 = 該日逐筆加總 */
   const byDate = new Map();
