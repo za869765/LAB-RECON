@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.8 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.4.9 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.8</span>
+  <span class="ver">v1.4.9</span>
 </header>
 <main>
 
@@ -643,6 +643,8 @@ function runVerification(central, billing, internal, agg){
       const c = cenCount.get(code)||0;
       const i = intCount.get(code)||0;
       if(c === i) continue;
+      /* v1.4.9：已知非此實驗室項目（大便潛血等）不算筆數不符，不再讓「筆數相符」消失 */
+      if(c === 0 && NON_LAB_HINTS[code]) continue;
       qtyOk=false;
       const name = CODE_TO_NAME[code] || code;
       if(c > i){
