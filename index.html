@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.4.9 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.5.0 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.4.9</span>
+  <span class="ver">v1.5.0</span>
 </header>
 <main>
 
@@ -414,11 +414,19 @@ function parseCentral(ws){
 ═══════════════════════════════════════════════════════ */
 function parseBilling(ws){
   const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:null,raw:false});
-  let total=0;
+  let total=0, custCode=null, ym=null;
   const visits=[]; let cur=null;
   for(const r of rows){
     if(!r||!r.length) continue;
     const a=String(r[0]||'').trim(), b=String(r[1]||'').trim();
+    /* v1.5.0：客戶代號（健保檢驗 1175、腸篩胃篩 OB 帳單另一個代號）與應收年月，給防呆用 */
+    if(a.startsWith('客戶代號')){
+      const m=a.match(/客戶代號:\s*(\S+)/); if(m) custCode=m[1];
+      const line=r.map(x=>String(x==null?'':x)).join(' ');
+      const y=line.match(/應收年度:\s*(\d+)/), p=line.match(/應收期間:\s*(\d+)/);
+      if(y&&p) ym=y[1]+p[1].padStart(2,'0');
+      continue;
+    }
     /* R2 第二格是金額 */
     if(a.startsWith('應收金額')){ total = +r[1]||0; continue; }
     if(/^\d+\/\d+\/\d+/.test(a)){
@@ -428,7 +436,10 @@ function parseBilling(ws){
       cur.itemsText = b;
     }
   }
-  return {total,visits};
+  /* OB 帳單（腸篩/胃篩）：項目是 FOBT、HPSA、採便盒，不是健保檢驗 */
+  const obN = visits.filter(v=>/FOBT|HPSA|採便/.test(v.itemsText+' '+v.name)).length;
+  const isOB = visits.length>0 && obN*2 >= visits.length;
+  return {total,visits,custCode,ym,isOB};
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -595,6 +606,12 @@ function runVerification(central, billing, internal, agg){
     }
   }
   if(dailyOk) passes.push(`健保申報表 每天小計都正確`);
+
+  /* 0. v1.5.0：三份檔案是不是同一個月 */
+  const ymTxt = ym => `${ym.slice(0,3)} 年 ${+ym.slice(3)} 月`;
+  if(billing && billing.ym && central.month && billing.ym !== central.month){
+    issues.push({level:'error',cat:'檔案月份不一致',msg:`申報表是 ${ymTxt(central.month)}，客戶帳單是 ${ymTxt(billing.ym)} —— 放錯月份的帳單，下面帳單相關比對都不準，請換成同月份的檔`});
+  }
 
   /* 3. 客戶帳單應收金額 = 央保客戶統計（標準價） */
   if(billing){
@@ -1031,7 +1048,14 @@ async function handleFiles(files, hintType){
         if(STATE.central.month) STATE.month = STATE.central.month;
         setSlot('central', file.name, `✓ ${STATE.central.items.length} 筆檢驗、${STATE.central.dailySubs.length} 個工作日`);
       } else if(type==='billing'){
-        STATE.billing = parseBilling(wb.Sheets[wb.SheetNames[0]]);
+        const bill = parseBilling(wb.Sheets[wb.SheetNames[0]]);
+        if(bill.isOB){
+          /* v1.5.0：放錯成 OB（腸篩/胃篩）帳單 → 擋下，不拿來對帳，避免整頁誤判、自費亂算 */
+          STATE.billing = null;
+          setSlot('billing', file.name, `這是腸篩/胃篩的 OB 帳單（客戶代號 ${bill.custCode||'?'}），不是健保檢驗帳單 —— 請改放檔名沒有「OB」、應收金額跟申報表客戶統計差不多的那份`, true);
+          continue;
+        }
+        STATE.billing = bill;
         setSlot('billing', file.name, `✓ ${STATE.billing.visits.length} 筆訪視、應收 $${fmt(STATE.billing.total)}`);
       } else if(type==='internal'){
         STATE.internal = parseInternal(wb.Sheets[wb.SheetNames[0]]);
@@ -1050,6 +1074,7 @@ async function handleFiles(files, hintType){
   }
   /* 3 份齊全 → 自動產製 + 校對 */
   if(checkReady()) processData();
+  else document.getElementById('resultSection').classList.add('hidden');   // v1.5.0：有檔被擋下就收掉舊結果
 }
 
 function renderResult(){
