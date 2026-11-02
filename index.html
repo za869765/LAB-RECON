@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.5.1 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.5.2 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.5.1</span>
+  <span class="ver">v1.5.2</span>
 </header>
 <main>
 
@@ -399,7 +399,8 @@ function parseCentral(ws){
     if(hasLabel(r,'每日小計:')){ dailySubs.push({date:curDate,cost:+r[COL.cost]||0,decl:+r[COL.decl]||0}); inSection=false; continue; }
     if(hasLabel(r,'客戶統計:')){ total={cost:+r[COL.cost]||0,decl:+r[COL.decl]||0}; continue; }
     if(inSection&&a){
-      const sub=String(r[COL.sub]||'').trim(), big=String(r[COL.big]||'').trim();
+      /* v1.5.2：連續空白壓成一個再對名稱（廠商表「K  (Potassium)」是兩個空格，對不到 NAME_TO_CODE） */
+      const sub=String(r[COL.sub]||'').trim().replace(/\s+/g,' '), big=String(r[COL.big]||'').trim().replace(/\s+/g,' ');
       let code=null;
       /* 新格式：直接讀「健保代碼」欄 */
       if(COL.code!=null){
@@ -449,7 +450,7 @@ function parseBilling(ws){
       cur={date:a,name:r[1],id:r[2],idLong:r[3],amount:+r[4]||0,itemsText:''};
       visits.push(cur);
     } else if(cur && b && !a){
-      cur.itemsText = b;
+      cur.itemsText = b.replace(/\s+/g,' ');   // v1.5.2：同上，自費歸戶用名稱比對也要壓空白
     }
   }
   /* OB 帳單（腸篩/胃篩）：項目是 FOBT、HPSA、採便盒，不是健保檢驗 */
