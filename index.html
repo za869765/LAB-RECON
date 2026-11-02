@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>檢驗對帳計算器 v1.5.0 — 臺南市佳里區衛生所</title>
+<title>檢驗對帳計算器 v1.5.1 — 臺南市佳里區衛生所</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
@@ -103,7 +103,7 @@ table tr.total td{background:#fff8e1!important;font-weight:700;border-top:2px so
 <div class="wrap">
 <header>
   <h1>🧪 檢驗對帳計算器 — 臺南市佳里區衛生所</h1>
-  <span class="ver">v1.5.0</span>
+  <span class="ver">v1.5.1</span>
 </header>
 <main>
 
@@ -190,16 +190,29 @@ const NAME_TO_CODE = {
   'Free T3':'09107C',
   'Bilirubin-total':'09029C',
   'Bilirubin-direct':'09030C',
+  /* v1.5.1：115/10 申報表出現、以前對不到代碼的 6 項（代碼依 115 年度契約單價表） */
+  'Urine creatinine':'09016C',
+  'Na (Sodium)':'09021C',
+  'K (Potassium)':'09022C',
+  'B.U.N':'09002C',
+  'Hemoglobin':'08003C',
+  'Platelet':'08006C',
 };
 const CODE_TO_NAME = {
   '06012C':'Urine routine 尿液常規',
+  '08003C':'Hemoglobin 血色素',
+  '08006C':'Platelet 血小板',
   '08011C':'血液常規檢查 CBC',
   '09001C':'Cholesterol 總膽固醇',
+  '09002C':'B.U.N 血中尿素氮',
   '09004C':'Triglyceride 中性脂肪',
   '09005C':'Glucose 血液葡萄糖',
   '09006C':'HbA1C 糖化血色素',
   '09013C':'Uric acid 尿酸',
   '09015C':'Creatinine 血液肌酸酐',
+  '09016C':'Urine creatinine 尿液肌酸酐',
+  '09021C':'Na (Sodium) 鈉',
+  '09022C':'K (Potassium) 鉀',
   '09025C':'GOT(AST) 麩草轉氨脢',
   '09026C':'GPT(ALT) 麩丙硒轉氨脢',
   '09029C':'Bilirubin-total 總膽紅素',
@@ -243,18 +256,20 @@ const NON_LAB_HINTS = {
    115 年度臺南市政府衛生局所屬各區衛生所
    臨床醫事檢驗委託服務案 — 契約標準價格表
    decl = 健保支付點數，cost = 廠商申報之檢驗項目單價（成本）
+   v1.5.1：依「01-1 附件 115 年度…檢驗項目暨單價表」逐項核對，
+   取「廠商申報之檢驗項目單價」欄（非「機關申報」欄）
 ═══════════════════════════════════════════════════════ */
 const STANDARD_PRICES = {
   '06003C':{decl:15,   cost:11,   name:'尿蛋白 Urine protein'},
-  '06009C':{decl:25,   cost:15,   name:'尿沉渣鏡檢'},
+  '06009C':{decl:25,   cost:22,   name:'尿沉渣常規'},
   '06012C':{decl:75,   cost:33,   name:'尿液常規檢查'},
   '06013C':{decl:75,   cost:33,   name:'尿液化學法 Urine biochemistry'},
   '07001C':{decl:20,   cost:19,   name:'Occult blood'},
   '07009C':{decl:75,   cost:50,   name:'糞便鏡檢查'},
-  '08001C':{decl:20,   cost:16,   name:'RBC'},
-  '08002C':{decl:20,   cost:16,   name:'WBC'},
-  '08003C':{decl:20,   cost:16,   name:'Hemoglobin'},
-  '08004C':{decl:20,   cost:16,   name:'血球比容測定 Hct'},
+  '08001C':{decl:20,   cost:20,   name:'RBC'},
+  '08002C':{decl:20,   cost:20,   name:'WBC'},
+  '08003C':{decl:20,   cost:20,   name:'Hemoglobin'},
+  '08004C':{decl:20,   cost:20,   name:'血球比容值測定 Hct'},
   '08005C':{decl:30,   cost:30,   name:'ESR'},
   '08006C':{decl:40,   cost:33,   name:'Platelet count'},
   '08011C':{decl:200,  cost:74,   name:'血液常規檢查 CBC'},
@@ -286,7 +301,7 @@ const STANDARD_PRICES = {
   '09035C':{decl:270,  cost:100,  name:'TIBC'},
   '09038C':{decl:40,   cost:14,   name:'Albumin'},
   '09039C':{decl:40,   cost:14,   name:'白蛋白 Globulin'},
-  '09040C':{decl:40,   cost:20,   name:'Urine protein (random)'},
+  '09040C':{decl:40,   cost:20,   name:'Urine protein (random)'},   // 契約表同代碼另列 Total protein 14
   '09043C':{decl:200,  cost:80,   name:'HDL-cholesterol'},
   '09044C':{decl:250,  cost:96,   name:'LDL-cholesterol'},
   '09106C':{decl:200,  cost:150,  name:'Free T4'},
@@ -307,10 +322,10 @@ const STANDARD_PRICES = {
   '13007C':{decl:200,  cost:150,  name:'Aerobic Culture'},
   '14032C':{decl:160,  cost:79,   name:'HBsAg'},
   '14033C':{decl:200,  cost:90,   name:'Anti-HBs'},
-  '14036C':{decl:250,  cost:125,  name:'HBeAg'},
+  '14035C':{decl:250,  cost:125,  name:'HBeAg'},
   '14039C':{decl:240,  cost:150,  name:'Anti-HAV IgM'},
   '14040C':{decl:225,  cost:167,  name:'Anti-HAV IgG'},
-  '14047C':{decl:250,  cost:150,  name:'Anti-HCV'},
+  '14051C':{decl:250,  cost:150,  name:'Anti-HCV'},
   '30522C':{decl:376,  cost:225,  name:'幽門桿菌糞便抗原檢查'},
   /* 預防保健套餐 */
   '21013C':{decl:440,  cost:150,  name:'成人預防保健加值'},
@@ -399,6 +414,7 @@ function parseCentral(ws){
           else if(big==='尿液常規檢查') code='06012C';
           else if(big==='血液常規檢查') code='08011C';
           else if(big.includes('成人預防保健')) code='21013C';
+          else code = NAME_TO_CODE[big] || null;   // v1.5.1：單項也可能以「大項/單價」形式出現（如 Platelet）
         } else {
           code = NAME_TO_CODE[sub] || null;
         }
